@@ -294,13 +294,16 @@ if __name__ == "__main__":
             department_history_file_path = os.path.join(path, f"{department}.json")
             default_json_structure = {"files": {}, "last_checked": datetime.now().isoformat()}
             if not os.path.exists(department_history_file_path):
+                logger.info(f"Création de l'historique pour le département {department}")
                 with open(department_history_file_path, 'w') as f:
                     json.dump({millesime: default_json_structure}, f)
 
             with open(department_history_file_path, 'r') as f:
+                logger.info(f"Chargement de l'historique pour le département {department}")
                 department_json_history = json.load(f)
 
             if millesime not in department_json_history:
+                logger.info(f"Initialisation de l'historique pour le département {department} de la version {millesime}")
                 department_json_history[millesime] = default_json_structure
 
             # Parcourir les fichiers du département
@@ -310,13 +313,14 @@ if __name__ == "__main__":
                 # Vérification des modifications du fichier
                 if file_name not in department_json_history[millesime]["files"]:
                     # Initialisation si le fichier est nouveau
+                    logger.info(f"Nouveau fichier jamais téléchargé : {file_name}")
                     department_json_history[millesime]["files"][file_name] = {
                         "current": {"last_modified": date, "size": size},
                         "history": []
                     }
                 else:
-                    last_history = department_json_history[millesime]["files"][file_name]["history"][-1] if department_json_history[millesime]["files"][file_name]["history"] else {}
-
+                    logger.info(f"Le fichier a déjà été téléchargé, vérification des changements")
+                    last_history = department_json_history[millesime]["files"][file_name]["current"]
                     # Comparer la date et la taille pour détecter des changements
                     if last_history.get("last_modified") != date or last_history.get("size") != size:
                         # Log des changements détectés
@@ -331,7 +335,16 @@ if __name__ == "__main__":
                             "size": size,
                             "checked_on": datetime.now().isoformat()
                         })
+                    else:
+                        logger.info(f"Aucun changement détecté pour le fichier {file_name}")
+                        # mettre à jour le last_checked
+                        department_json_history[millesime]["files"][file_name]["last_checked"] = datetime.now().isoformat()
+                        # continuer à la prochaine itération
+                        continue
                 
+                # mettre à jour le last_checked
+                department_json_history[millesime]["files"][file_name]["last_checked"] = datetime.now().isoformat()
+
                 # Mise à jour des informations actuelles
                 department_json_history[millesime]["files"][file_name]["current"] = {
                     "last_modified": date,
@@ -355,6 +368,9 @@ if __name__ == "__main__":
                 json.dump(department_json_history, f)
             logger.info(f"L'historique du département {department} a été mis à jour pour la version {millesime}")
     # Log des requêtes
+    # lancer le script push_history_by_dep_ogr2ogr.py pour mettre à jour la base de données
+    python_script = "push_cadastre_history_by_dep_ogr2ogr.py"
+    os.system(f"python {python_script}")
 
     # TODO faire des logs dans un fichier suivi fichiers pour nombre fichiers par communes, nombre communes par dep + liste, nombre dep par version + liste
     # anoncer la last version pour que l'on puisse la traiter pour la mise à en db dans le futur
