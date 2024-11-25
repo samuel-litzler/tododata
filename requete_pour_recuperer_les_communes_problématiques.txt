@@ -1,0 +1,35 @@
+WITH intersected_communes_unique AS (
+	WITH intersected_communes AS (
+	    SELECT 
+	        c5m.code AS code_commune_5m,
+	        ref.code_commune AS code_commune_unique
+	    FROM 
+	        reference.communes_unique AS ref
+	    INNER JOIN 
+	        contours_administratifs_historique.communes_5m_2024 AS c5m
+	    ON 
+	        ST_Intersects(c5m.wkb_geometry, ref.geom)
+	    WHERE 
+	        ST_Area(ST_Intersection(
+	            ST_Transform(ref.geom, 2154), 
+	            ST_Transform(c5m.wkb_geometry, 2154)
+	        )) >= 0.99 * ST_Area(ST_Transform(ref.geom, 2154))
+			AND ST_Area(ST_Transform(c5m.wkb_geometry, 2154)) >= 2 * ST_Area(ST_Transform(ref.geom, 2154))
+	)
+	SELECT 
+	    code_commune_5m,
+	    STRING_AGG(code_commune_unique, ', ') AS aggregated_codes,
+	    ST_AsGeoJSON(ST_Union(ref.geom)) AS unified_geom_geojson
+	FROM 
+	    intersected_communes
+	INNER JOIN 
+	    reference.communes_unique AS ref
+	ON 
+	    intersected_communes.code_commune_unique = ref.code_commune
+	GROUP BY 
+	    code_commune_5m
+)
+SELECT code_commune_5m,aggregated_codes,unified_geom_geojson
+FROM intersected_communes_unique
+WHERE code_commune_5m != aggregated_codes
+
