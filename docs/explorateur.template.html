@@ -1,0 +1,442 @@
+<title>Vie des Communes</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --ground:#EDF0F1; --surface:#F7F9F9; --surface-alt:#E3E8E9; --hairline:#C7D0D2;
+    --ink:#131A20; --ink-soft:#47555E; --ink-faint:#7C8B93;
+    --insee:#A6741B; --insee-wash:#A6741B1F;
+    --cadastre:#16696D; --cadastre-wash:#16696D1F;
+    --ecart:#B33A22; --ecart-wash:#B33A2216;
+    --valide:#2F6B45; --absent:#CDD5D7;
+    --display:Georgia,'Iowan Old Style','Palatino Linotype',Palatino,serif;
+    --body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --mono:ui-monospace,'SF Mono',SFMono-Regular,'Cascadia Mono',Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --ground:#0E1418; --surface:#151D22; --surface-alt:#1E282E; --hairline:#2E3C44;
+    --ink:#E4EAEC; --ink-soft:#A3B2B9; --ink-faint:#6F8189;
+    --insee:#D9A441; --insee-wash:#D9A44124;
+    --cadastre:#46B3B3; --cadastre-wash:#46B3B324;
+    --ecart:#E4785C; --ecart-wash:#E4785C1C;
+    --valide:#6BBF8A; --absent:#2A363C;
+  }}
+  :root[data-theme="dark"]{
+    --ground:#0E1418; --surface:#151D22; --surface-alt:#1E282E; --hairline:#2E3C44;
+    --ink:#E4EAEC; --ink-soft:#A3B2B9; --ink-faint:#6F8189;
+    --insee:#D9A441; --insee-wash:#D9A44124;
+    --cadastre:#46B3B3; --cadastre-wash:#46B3B324;
+    --ecart:#E4785C; --ecart-wash:#E4785C1C;
+    --valide:#6BBF8A; --absent:#2A363C;
+  }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);
+       font-size:15.5px;line-height:1.55;-webkit-font-smoothing:antialiased}
+  h1,h2,h3{font-family:var(--display);font-weight:600;margin:0;text-wrap:balance;letter-spacing:-.01em}
+  p{margin:0}
+  code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .eyebrow{font-family:var(--mono);font-size:.66rem;letter-spacing:.16em;
+           text-transform:uppercase;color:var(--ink-faint)}
+
+  .shell{display:grid;grid-template-columns:320px minmax(0,1fr);min-height:100vh}
+  @media (max-width:880px){.shell{grid-template-columns:1fr}}
+
+  /* ---------------- panneau de gauche ---------------- */
+  aside{background:var(--surface);border-right:1px solid var(--hairline);
+        display:flex;flex-direction:column;max-height:100vh;position:sticky;top:0}
+  @media (max-width:880px){aside{position:static;max-height:none;border-right:0;
+        border-bottom:1px solid var(--hairline)}}
+  .brand{padding:1.5rem 1.4rem 1.1rem;border-bottom:1px solid var(--hairline)}
+  .brand h1{font-size:1.32rem;margin-top:.35rem}
+  .brand .sub{font-size:.8rem;color:var(--ink-faint);margin-top:.4rem}
+
+  .searchbox{padding:1.1rem 1.4rem;border-bottom:1px solid var(--hairline)}
+  input[type=search]{width:100%;padding:.62rem .75rem;font-family:var(--mono);font-size:.86rem;
+    background:var(--ground);color:var(--ink);border:1px solid var(--hairline);border-radius:3px}
+  input[type=search]:focus{outline:2px solid var(--cadastre);outline-offset:1px;border-color:transparent}
+  .hint{font-size:.72rem;color:var(--ink-faint);margin-top:.5rem;font-family:var(--mono)}
+
+  .results{overflow-y:auto;flex:1;min-height:0}
+  @media (max-width:880px){.results{max-height:280px}}
+  .row{display:flex;gap:.6rem;align-items:baseline;width:100%;text-align:left;
+    padding:.5rem 1.4rem;background:none;border:0;border-bottom:1px solid var(--hairline);
+    color:inherit;font:inherit;cursor:pointer}
+  .row:hover,.row:focus-visible{background:var(--cadastre-wash);outline:none}
+  .row[aria-current=true]{background:var(--cadastre-wash);box-shadow:inset 3px 0 0 var(--cadastre)}
+  .row .c{font-family:var(--mono);font-size:.79rem;color:var(--cadastre);flex:0 0 3.4rem}
+  .row .n{font-size:.82rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .b{margin-left:auto;font-family:var(--mono);font-size:.68rem;color:var(--ink-faint)}
+
+  .presets{padding:1.1rem 1.4rem;border-top:1px solid var(--hairline);background:var(--ground)}
+  .presets .eyebrow{display:block;margin-bottom:.6rem}
+  .chip{display:block;width:100%;text-align:left;margin-bottom:.32rem;padding:.4rem .55rem;
+    font:inherit;font-size:.78rem;background:var(--surface);color:var(--ink-soft);
+    border:1px solid var(--hairline);border-radius:3px;cursor:pointer}
+  .chip:hover,.chip:focus-visible{border-color:var(--cadastre);color:var(--ink);outline:none}
+  .chip b{font-family:var(--mono);font-size:.72rem;color:var(--ecart);font-weight:500}
+
+  /* ---------------- panneau principal ---------------- */
+  main{padding:clamp(1.3rem,3.5vw,2.6rem);max-width:1040px}
+  .empty{color:var(--ink-faint);font-size:.95rem;max-width:48ch;margin-top:3rem}
+
+  .head{border-bottom:2px solid var(--ink);padding-bottom:1.1rem}
+  .head .code{font-family:var(--mono);font-size:.95rem;color:var(--cadastre);letter-spacing:.05em}
+  .head h2{font-size:clamp(1.6rem,4.2vw,2.3rem);margin-top:.25rem}
+  .head .alias{font-size:.88rem;color:var(--ink-faint);margin-top:.5rem;font-family:var(--mono)}
+
+  .verdicts{display:flex;flex-wrap:wrap;gap:.5rem;margin-top:1.2rem}
+  .v{font-family:var(--mono);font-size:.72rem;padding:.28em .6em;border-radius:3px;
+     border:1px solid transparent}
+  .v-ok{background:color-mix(in srgb,var(--valide) 12%,transparent);color:var(--valide);
+        border-color:color-mix(in srgb,var(--valide) 35%,transparent)}
+  .v-warn{background:var(--ecart-wash);color:var(--ecart);
+        border-color:color-mix(in srgb,var(--ecart) 35%,transparent)}
+  .v-info{background:var(--cadastre-wash);color:var(--cadastre);
+        border-color:color-mix(in srgb,var(--cadastre) 30%,transparent)}
+
+  .block{margin-top:2.3rem}
+  .block > .eyebrow{display:block;margin-bottom:.15rem}
+  .block h3{font-size:1.1rem;margin-bottom:.9rem}
+
+  .legend{display:flex;flex-wrap:wrap;gap:.35rem 1.2rem;font-family:var(--mono);
+          font-size:.71rem;color:var(--ink-soft);margin-bottom:.85rem}
+  .legend span{display:inline-flex;align-items:center;gap:.4rem}
+  .sw{width:13px;height:13px;border-radius:2px;flex:0 0 auto}
+
+  .plot{overflow-x:auto}
+  .plot svg{display:block;min-width:640px;width:100%;height:auto}
+
+  table{width:100%;border-collapse:collapse;font-size:.85rem;min-width:520px}
+  .tablewrap{overflow-x:auto}
+  th{text-align:left;font-family:var(--mono);font-size:.65rem;letter-spacing:.11em;
+     text-transform:uppercase;color:var(--ink-faint);font-weight:500;
+     padding:0 .7rem .5rem 0;border-bottom:1px solid var(--ink)}
+  td{padding:.5rem .7rem .5rem 0;border-bottom:1px solid var(--hairline);vertical-align:top}
+  td.mono{white-space:nowrap}
+  tbody tr:last-child td{border-bottom:0}
+  .mod{display:inline-block;font-family:var(--mono);font-size:.68rem;padding:.1em .42em;
+       border-radius:2px;background:var(--insee-wash);color:var(--insee)}
+  .dir-in{color:var(--valide)}
+  .dir-out{color:var(--ecart)}
+
+  .note{margin-top:1rem;padding:.85rem 1.05rem;background:var(--surface);
+    border:1px solid var(--hairline);border-left:3px solid var(--cadastre);
+    border-radius:0 3px 3px 0;font-size:.87rem;color:var(--ink-soft)}
+  .note.warn{border-left-color:var(--ecart);background:var(--ecart-wash)}
+  .note b{color:var(--ink)}
+  :focus-visible{outline:2px solid var(--cadastre);outline-offset:2px}
+</style>
+
+<div class="shell">
+  <aside>
+    <div class="brand">
+      <div class="eyebrow">Nexus Analytics</div>
+      <h1>Vie des communes</h1>
+      <p class="sub">32 millésimes cadastraux confrontés au registre INSEE.
+        <span class="mono" id="stat-count"></span></p>
+    </div>
+
+    <div class="searchbox">
+      <input type="search" id="q" placeholder="Code INSEE ou nom…" autocomplete="off"
+             aria-label="Rechercher une commune par code INSEE ou par nom">
+      <div class="hint" id="hint"></div>
+    </div>
+
+    <div class="results" id="results" role="list"></div>
+
+    <div class="presets">
+      <span class="eyebrow">Cas remarquables</span>
+      <button class="chip" data-go="27198">Mesnils-sur-Iton <b>12 mouvements</b></button>
+      <button class="chip" data-go="60694">Les Hauts-Talican <b>rétablie en 2024</b></button>
+      <button class="chip" data-go="01033">Valserhône <b>renommée 2 fois</b></button>
+      <button class="chip" data-go="97123">Saint-Barthélemy <b>hors COG</b></button>
+      <button class="chip" data-go="75101">Paris 1er <b>arrondissement</b></button>
+      <button class="chip" data-go="05162">La Saulce <b>trou de 11 millésimes</b></button>
+    </div>
+  </aside>
+
+  <main id="main">
+    <p class="empty">Cherche une commune, ou pioche dans les cas remarquables.
+      Chaque fiche superpose deux horloges : les millésimes où le cadastre a réellement
+      observé la commune, et les dates auxquelles l'INSEE a acté ses mouvements.</p>
+  </main>
+</div>
+
+<script id="payload" type="application/json">__DATA__</script>
+<script>
+const D = JSON.parse(document.getElementById('payload').textContent);
+const MIL = D.millesimes;
+const NMIL = MIL.length;
+const MODS = D.mods;
+
+// index par code
+const BY_CODE = new Map();
+for (const c of D.communes) BY_CODE.set(c[0], { code: c[0], nom: c[1], pres: BigInt(c[2]), comb: BigInt(c[3]) });
+
+const COG = new Map();
+for (const r of D.cog) { if (!COG.has(r[0])) COG.set(r[0], []); COG.get(r[0]).push(r); }
+
+const MVT_IN = new Map(), MVT_OUT = new Map();
+for (const m of D.mvt) {
+  if (!MVT_OUT.has(m[2])) MVT_OUT.set(m[2], []); MVT_OUT.get(m[2]).push(m);
+  if (!MVT_IN.has(m[4]))  MVT_IN.set(m[4],  []); MVT_IN.get(m[4]).push(m);
+}
+const ANO = new Map();
+for (const a of D.anomalies) { if (!ANO.has(a[0])) ANO.set(a[0], []); ANO.get(a[0]).push(a); }
+
+const SANS_CAD = new Map(D.sans_cadastre.map(r => [r[0], r[1]]));
+const ARM = new Map(D.arm.map(r => [r[0], { nom: r[1], parent: r[2] }]));
+
+document.getElementById('stat-count').textContent =
+  BY_CODE.size.toLocaleString('fr-FR') + ' codes indexés';
+
+// Plage explicite des diacritiques combinants : un littéral collé ici serait
+// illisible et fragile au copier-coller.
+const norm = s => (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+const SEARCH = D.communes.map(c => ({ code: c[0], nom: c[1], k: c[0] + ' ' + norm(c[1]) }));
+
+const bit = (mask, i) => (mask >> BigInt(i)) & 1n;
+const popcount = m => { let n = 0; while (m) { n += Number(m & 1n); m >>= 1n; } return n; };
+const NS = 'http://www.w3.org/2000/svg';
+const el = (n, a = {}) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+const esc = s => (s ?? '').toString().replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fdate = d => d ? new Date(d + 'T00:00:00Z').toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' }) : '';
+
+/* ---------------- recherche ---------------- */
+const results = document.getElementById('results');
+const input = document.getElementById('q');
+const hint = document.getElementById('hint');
+let current = null;
+
+function render(list, total) {
+  results.innerHTML = '';
+  hint.textContent = total > list.length
+    ? list.length + ' affichés sur ' + total.toLocaleString('fr-FR')
+    : (total ? total + ' résultat' + (total > 1 ? 's' : '') : '');
+  for (const r of list) {
+    const b = document.createElement('button');
+    b.className = 'row'; b.type = 'button'; b.setAttribute('role', 'listitem');
+    if (r.code === current) b.setAttribute('aria-current', 'true');
+    const c = BY_CODE.get(r.code);
+    b.innerHTML = `<span class="c">${esc(r.code)}</span><span class="n">${esc(r.nom)}</span>` +
+                  `<span class="b">${popcount(c.pres)}/${NMIL}</span>`;
+    b.onclick = () => select(r.code);
+    results.appendChild(b);
+  }
+}
+function search(q) {
+  const k = norm(q).trim();
+  if (!k) { render(SEARCH.slice(0, 60), SEARCH.length); return; }
+  const hits = [];
+  for (const s of SEARCH) if (s.k.includes(k)) { hits.push(s); if (hits.length > 400) break; }
+  hits.sort((a, b) => (a.code.startsWith(k) ? -1 : 0) - (b.code.startsWith(k) ? -1 : 0)
+                   || a.nom.length - b.nom.length);
+  render(hits.slice(0, 60), hits.length);
+}
+input.addEventListener('input', () => search(input.value));
+document.querySelectorAll('[data-go]').forEach(b =>
+  b.addEventListener('click', () => { const c = b.dataset.go; input.value = c; search(c); select(c); }));
+
+/* ---------------- fiche commune ---------------- */
+function select(code) {
+  current = code;
+  const c = BY_CODE.get(code);
+  const main = document.getElementById('main');
+  if (!c) {
+    main.innerHTML = `<div class="head"><div class="code">${esc(code)}</div>
+      <h2>${esc(SANS_CAD.get(code) || 'Code inconnu')}</h2></div>
+      <div class="note warn"><b>Aucune observation cadastrale.</b> Ce code existe au COG mais
+      n'a jamais été vu dans les 32 millésimes — commune sans cadastre vectorisé.</div>`;
+    return;
+  }
+  const periodes = COG.get(code) || [];
+  const nomCog = periodes.length ? periodes[periodes.length - 1][1] : null;
+  const armInfo = ARM.get(code);
+  // Un code peut figurer dans le COG historique tout en n'étant plus une commune
+  // aujourd'hui : Saint-Barthélemy et Saint-Martin ont une période close en 2007.
+  // C'est la date de fin de la dernière période, pas la simple présence au COG,
+  // qui dit si le code est encore vivant administrativement.
+  const closDepuis = periodes.length ? periodes[periodes.length - 1][3] : null;
+  const horsCogActuel = !armInfo && (!periodes.length || !!closDepuis);
+  const anos = ANO.get(code) || [];
+  const sortants = (MVT_OUT.get(code) || []).filter(m => m[4] !== code);
+  const entrants = (MVT_IN.get(code) || []).filter(m => m[2] !== code);
+  const renommages = (MVT_IN.get(code) || []).filter(m => m[2] === code && m[0] === '10');
+
+  // verdicts
+  const V = [];
+  const nPres = popcount(c.pres), nComb = popcount(c.comb);
+  V.push(nPres === NMIL
+    ? `<span class="v v-ok">présente sur les ${NMIL} millésimes</span>`
+    : `<span class="v v-info">${nPres}/${NMIL} millésimes</span>`);
+  if (nComb) V.push(`<span class="v v-warn">${nComb} millésime${nComb > 1 ? 's' : ''} comblé${nComb > 1 ? 's' : ''}</span>`);
+  if (armInfo) V.push(`<span class="v v-info">arrondissement municipal de ${esc(armInfo.parent)}</span>`);
+  if (horsCogActuel) V.push(`<span class="v v-warn">${closDepuis ? "retirée du COG en " + closDepuis.slice(0,4) : "absente du COG"}</span>`);
+  if (entrants.length) V.push(`<span class="v v-info">${entrants.length} absorption${entrants.length > 1 ? 's' : ''}</span>`);
+  if (sortants.length) V.push(`<span class="v v-warn">code retiré par l'INSEE</span>`);
+  for (const a of anos) if (a[1] === 'R-TMP-002') V.push(`<span class="v v-ok">rétablissement INSEE confirmé</span>`);
+
+  main.innerHTML = `
+    <div class="head">
+      <div class="code">${esc(code)}</div>
+      <h2>${esc(nomCog || c.nom)}</h2>
+      ${nomCog && norm(nomCog) !== norm(c.nom)
+        ? `<div class="alias">cadastre : ${esc(c.nom)}</div>` : ''}
+      <div class="verdicts">${V.join('')}</div>
+    </div>
+
+    <div class="block">
+      <span class="eyebrow">Les deux horloges</span>
+      <h3>Observation cadastrale et mouvements administratifs</h3>
+      <div class="legend">
+        <span><i class="sw" style="background:var(--cadastre)"></i>observée</span>
+        <span><i class="sw" style="background:var(--ecart)"></i>comblée (défaut de source)</span>
+        <span><i class="sw" style="background:var(--absent)"></i>absente</span>
+        <span><i class="sw" style="background:var(--insee);border-radius:50%"></i>mouvement INSEE</span>
+      </div>
+      <div class="plot"><svg id="tl" viewBox="0 0 900 ${sortants.length || entrants.length || renommages.length ? 210 : 130}" role="img"></svg></div>
+    </div>
+
+    ${periodes.length ? `
+    <div class="block">
+      <span class="eyebrow">Registre INSEE</span>
+      <h3>Identité officielle depuis 1943</h3>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Dénomination</th><th>Début</th><th>Fin</th></tr></thead>
+        <tbody>${periodes.map(p => `<tr>
+          <td>${esc(p[1])}</td><td class="mono">${fdate(p[2])}</td>
+          <td class="mono">${p[3] ? fdate(p[3]) : '<span style="color:var(--valide)">en cours</span>'}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>` : ''}
+
+    ${(entrants.length || sortants.length) ? `
+    <div class="block">
+      <span class="eyebrow">Filiation</span>
+      <h3>Mouvements de territoire</h3>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Sens</th><th>Date d'effet</th><th>Code</th><th>Commune</th><th>Mouvement</th></tr></thead>
+        <tbody>
+          ${entrants.map(m => `<tr>
+            <td class="dir-in">absorbe</td><td class="mono">${fdate(m[1])}</td>
+            <td class="mono">${esc(m[2])}</td><td>${esc(m[3])}${m[6] !== 'COM' ? ` <span class="mono" style="color:var(--ink-faint)">${esc(m[6])}</span>` : ''}</td>
+            <td><span class="mod">${esc(m[0])}</span> ${esc(MODS[m[0]] || '')}</td></tr>`).join('')}
+          ${sortants.map(m => `<tr>
+            <td class="dir-out">versée à</td><td class="mono">${fdate(m[1])}</td>
+            <td class="mono">${esc(m[4])}</td><td>${esc(m[5])}</td>
+            <td><span class="mod">${esc(m[0])}</span> ${esc(MODS[m[0]] || '')}</td></tr>`).join('')}
+        </tbody>
+      </table></div>
+    </div>` : ''}
+
+    ${anos.map(a => a[1] === 'R-SRC-001' ? `
+      <div class="note warn"><b>Trou de millésime comblé.</b> Ce code est absent de
+      ${esc(a[3])} millésime${Number(a[3]) > 1 ? 's' : ''} intermédiaire${Number(a[3]) > 1 ? 's' : ''}
+      puis revient, sans aucun mouvement INSEE correspondant. Traité comme un défaut de
+      publication en amont : la présence est réputée continue, et l'écart reste tracé
+      sous la règle <code>R-SRC-001</code>.</div>` : `
+      <div class="note"><b>Absence authentique.</b> L'interruption correspond à un
+      rétablissement de commune acté par l'INSEE. Elle n'est délibérément
+      <em>pas</em> comblée — règle <code>R-TMP-002</code>.</div>`).join('')}
+
+    ${armInfo ? `<div class="note"><b>Arrondissement municipal.</b> Le cadastre découpe
+      Paris, Lyon et Marseille par arrondissement ; le COG ne connaît que la commune
+      entière <code>${esc(armInfo.parent)}</code>. L'écart est structurel, pas une anomalie.</div>` : ''}
+
+    ${horsCogActuel ? `<div class="note warn"><b>${closDepuis ? 'Retirée du COG en ' + closDepuis.slice(0,4) + '.' : 'Absente du COG.'}</b>
+      Cadastrée mais hors du Code officiel géographique — cas de Saint-Barthélemy et
+      Saint-Martin, devenues collectivités d'outre-mer en 2007. Le cadastre est un
+      référentiel foncier, il n'a pas de raison de les retirer.</div>` : ''}
+  `;
+
+  drawTimeline(c, [...entrants, ...sortants, ...renommages]);
+  render_current_highlight();
+}
+function render_current_highlight() {
+  results.querySelectorAll('.row').forEach(r => r.removeAttribute('aria-current'));
+  const rows = [...results.querySelectorAll('.row')];
+  const i = rows.findIndex(r => r.querySelector('.c').textContent === current);
+  if (i >= 0) rows[i].setAttribute('aria-current', 'true');
+}
+
+/* ---------------- la frise ---------------- */
+function drawTimeline(c, mvts) {
+  const svg = document.getElementById('tl');
+  if (!svg) return;
+  svg.innerHTML = '';
+  const W = 900, L = 8, R = 8, yStrip = 58, hStrip = 30;
+  const t = d => new Date(d + 'T00:00:00Z').getTime();
+  // l'axe couvre les millésimes, élargi pour accueillir les mouvements hors bornes
+  const dates = [t(MIL[0]), t(MIL[NMIL - 1]), ...mvts.map(m => t(m[1]))];
+  let x0 = Math.min(...dates), x1 = Math.max(...dates);
+  const pad = (x1 - x0) * 0.04 || 8.64e7;
+  x0 -= pad; x1 += pad;
+  const X = ms => L + (ms - x0) / (x1 - x0) * (W - L - R);
+
+  // graduation annuelle
+  const y0 = new Date(x0).getUTCFullYear(), y1 = new Date(x1).getUTCFullYear();
+  const step = (y1 - y0) > 14 ? 4 : (y1 - y0) > 7 ? 2 : 1;
+  for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) {
+    const x = X(t(y + '-01-01'));
+    svg.appendChild(el('line', { x1: x, x2: x, y1: 34, y2: yStrip + hStrip + 8,
+      stroke: 'var(--hairline)', 'stroke-width': 1 }));
+    const lb = el('text', { x, y: yStrip + hStrip + 24, 'text-anchor': 'middle',
+      fill: 'var(--ink-faint)', 'font-family': 'var(--mono)', 'font-size': 11 });
+    lb.textContent = y;
+    svg.appendChild(lb);
+  }
+
+  // bande des millésimes : une cellule par millésime, largeur = intervalle réel
+  const lbl = el('text', { x: L, y: yStrip - 10, fill: 'var(--cadastre)',
+    'font-family': 'var(--mono)', 'font-size': 10.5, 'letter-spacing': '.1em' });
+  lbl.textContent = 'CADASTRE — ' + NMIL + ' MILLÉSIMES';
+  svg.appendChild(lbl);
+
+  for (let i = 0; i < NMIL; i++) {
+    const a = t(MIL[i]);
+    const b = i + 1 < NMIL ? t(MIL[i + 1]) : a + (a - t(MIL[i - 1]));
+    const x = X(a), w = Math.max(3, X(b) - X(a) - 1.2);
+    const has = bit(c.pres, i), comb = bit(c.comb, i);
+    const fill = !has ? 'var(--absent)' : comb ? 'var(--ecart)' : 'var(--cadastre)';
+    const cell = el('rect', { x, y: yStrip, width: w, height: hStrip, fill, rx: 1.5,
+      opacity: has ? 1 : .55 });
+    cell.appendChild(el('title')).textContent =
+      MIL[i] + (has ? (comb ? ' — comblé (absent de la source)' : ' — observée') : ' — absente');
+    svg.appendChild(cell);
+  }
+
+  if (!mvts.length) return;
+
+  // jalons INSEE, au-dessus, avec trait de rappel vers la bande
+  const lb2 = el('text', { x: L, y: 16, fill: 'var(--insee)',
+    'font-family': 'var(--mono)', 'font-size': 10.5, 'letter-spacing': '.1em' });
+  lb2.textContent = 'REGISTRE INSEE';
+  svg.appendChild(lb2);
+
+  const groupes = new Map();
+  for (const m of mvts) { if (!groupes.has(m[1])) groupes.set(m[1], []); groupes.get(m[1]).push(m); }
+  const yEv = 140;
+  let alt = 0;
+  for (const [date, arr] of [...groupes].sort((a, b) => a[0] < b[0] ? -1 : 1)) {
+    const x = X(t(date));
+    svg.appendChild(el('line', { x1: x, x2: x, y1: 26, y2: yStrip + hStrip,
+      stroke: 'var(--insee)', 'stroke-width': 1.2, 'stroke-dasharray': '3 3', opacity: .85 }));
+    svg.appendChild(el('circle', { cx: x, cy: 26, r: 4.5, fill: 'var(--insee)' }));
+
+    const yl = yEv + (alt % 2) * 30;
+    const anchor = x > W * 0.75 ? 'end' : x < W * 0.12 ? 'start' : 'middle';
+    const d1 = el('text', { x, y: yl, 'text-anchor': anchor, fill: 'var(--ink)',
+      'font-family': 'var(--mono)', 'font-size': 10.5 });
+    d1.textContent = date;
+    svg.appendChild(d1);
+    const mods = [...new Set(arr.map(m => m[0]))].join(' · ');
+    const d2 = el('text', { x, y: yl + 13, 'text-anchor': anchor, fill: 'var(--ink-soft)',
+      'font-family': 'var(--mono)', 'font-size': 10 });
+    d2.textContent = 'MOD ' + mods + ' (' + arr.length + ')';
+    svg.appendChild(d2);
+    alt++;
+  }
+}
+
+search('');
+</script>

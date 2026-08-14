@@ -1,0 +1,9 @@
+requests
+beautifulsoup4
+apscheduler
+
+# push en db
+psycopg2-binary
+lxml
+fiona
+# gdal # déjà installé sur le serveur

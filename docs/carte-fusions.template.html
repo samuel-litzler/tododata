@@ -1,0 +1,430 @@
+<title>Territoires Absorbés</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --ground:#EDF0F1; --surface:#F7F9F9; --hairline:#C7D0D2;
+    --ink:#131A20; --ink-soft:#47555E; --ink-faint:#7C8B93;
+    --core:#5B6B73;                /* le noyau historique (préfixe 000) */
+    --quartier:#9AA7AC;            /* subdivision interne, pas une ancienne commune */
+    --insee:#A6741B; --cadastre:#16696D; --ecart:#B33A22; --valide:#2F6B45;
+    --plan:#FBFCFC;                /* fond de plan */
+    --display:Georgia,'Iowan Old Style','Palatino Linotype',Palatino,serif;
+    --body:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;
+    --mono:ui-monospace,'SF Mono',SFMono-Regular,'Cascadia Mono',Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --ground:#0E1418; --surface:#151D22; --hairline:#2E3C44;
+    --ink:#E4EAEC; --ink-soft:#A3B2B9; --ink-faint:#6F8189;
+    --core:#8A9AA3; --quartier:#5C6C73;
+    --insee:#D9A441; --cadastre:#46B3B3; --ecart:#E4785C; --valide:#6BBF8A;
+    --plan:#111A1F;
+  }}
+  :root[data-theme="dark"]{
+    --ground:#0E1418; --surface:#151D22; --hairline:#2E3C44;
+    --ink:#E4EAEC; --ink-soft:#A3B2B9; --ink-faint:#6F8189;
+    --core:#8A9AA3; --quartier:#5C6C73;
+    --insee:#D9A441; --cadastre:#46B3B3; --ecart:#E4785C; --valide:#6BBF8A;
+    --plan:#111A1F;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--body);
+       font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  h1,h2,h3{font-family:var(--display);font-weight:600;margin:0;text-wrap:balance}
+  p{margin:0}
+  code,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .eyebrow{font-family:var(--mono);font-size:.65rem;letter-spacing:.16em;
+           text-transform:uppercase;color:var(--ink-faint)}
+
+  .shell{display:grid;grid-template-columns:300px minmax(0,1fr);min-height:100vh}
+  @media (max-width:900px){.shell{grid-template-columns:1fr}}
+
+  aside{background:var(--surface);border-right:1px solid var(--hairline);
+        display:flex;flex-direction:column;max-height:100vh;position:sticky;top:0}
+  @media (max-width:900px){aside{position:static;max-height:none;
+        border-right:0;border-bottom:1px solid var(--hairline)}}
+  .brand{padding:1.4rem 1.3rem 1rem;border-bottom:1px solid var(--hairline)}
+  .brand h1{font-size:1.25rem;margin-top:.3rem}
+  .brand .sub{font-size:.78rem;color:var(--ink-faint);margin-top:.45rem}
+  .searchbox{padding:1rem 1.3rem;border-bottom:1px solid var(--hairline)}
+  input[type=search]{width:100%;padding:.6rem .7rem;font-family:var(--mono);font-size:.84rem;
+    background:var(--ground);color:var(--ink);border:1px solid var(--hairline);border-radius:3px}
+  input[type=search]:focus{outline:2px solid var(--cadastre);outline-offset:1px;border-color:transparent}
+  .hint{font-size:.71rem;color:var(--ink-faint);margin-top:.45rem;font-family:var(--mono)}
+  .results{overflow-y:auto;flex:1;min-height:0}
+  @media (max-width:900px){.results{max-height:240px}}
+  .row{display:flex;gap:.55rem;align-items:baseline;width:100%;text-align:left;
+    padding:.48rem 1.3rem;background:none;border:0;border-bottom:1px solid var(--hairline);
+    color:inherit;font:inherit;cursor:pointer}
+  .row:hover{background:color-mix(in srgb,var(--cadastre) 9%,transparent)}
+  .row[aria-current=true]{background:color-mix(in srgb,var(--cadastre) 13%,transparent);
+    box-shadow:inset 3px 0 0 var(--cadastre)}
+  .row .c{font-family:var(--mono);font-size:.76rem;color:var(--cadastre);flex:0 0 3.3rem}
+  .row .n{font-size:.81rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row .b{margin-left:auto;font-family:var(--mono);font-size:.7rem;color:var(--ecart)}
+
+  main{padding:clamp(1.2rem,3vw,2.2rem);max-width:1100px}
+  .head{border-bottom:2px solid var(--ink);padding-bottom:1rem}
+  .head .code{font-family:var(--mono);font-size:.9rem;color:var(--cadastre);letter-spacing:.05em}
+  .head h2{font-size:clamp(1.5rem,4vw,2.15rem);margin-top:.2rem}
+  .head .meta{font-size:.85rem;color:var(--ink-faint);margin-top:.5rem;font-family:var(--mono)}
+
+  .block{margin-top:2rem}
+  .block > .eyebrow{display:block;margin-bottom:.15rem}
+  .block h3{font-size:1.05rem;margin-bottom:.8rem}
+
+  .mapwrap{background:var(--plan);border:1px solid var(--hairline);border-radius:3px;
+           position:relative;overflow:hidden}
+  #map{display:block;width:100%;height:auto}
+  .part{stroke:var(--plan);stroke-width:.7;cursor:pointer;transition:opacity .12s}
+  .part:hover{stroke:var(--ink);stroke-width:1.4}
+  .part.dim{opacity:.28}
+  .plabel{font-family:var(--mono);font-size:9.5px;fill:var(--ink);pointer-events:none;
+          paint-order:stroke;stroke:var(--plan);stroke-width:2.4px;stroke-linejoin:round}
+
+  .tip{position:absolute;pointer-events:none;background:var(--surface);color:var(--ink);
+    border:1px solid var(--hairline);border-radius:3px;padding:.5rem .65rem;font-size:.79rem;
+    box-shadow:0 4px 14px rgba(0,0,0,.16);opacity:0;transition:opacity .1s;max-width:250px;z-index:5}
+  .tip.on{opacity:1}
+  .tip .t{font-family:var(--mono);font-size:.75rem;color:var(--cadastre)}
+  .tip .d{color:var(--ink-faint);font-size:.73rem;font-family:var(--mono);margin-top:.2rem}
+
+  .ramp{display:flex;align-items:center;gap:.5rem;font-family:var(--mono);
+        font-size:.7rem;color:var(--ink-soft);margin-bottom:.7rem;flex-wrap:wrap}
+  .ramp i{width:15px;height:12px;border-radius:2px;display:inline-block}
+
+  .tablewrap{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;font-size:.84rem;min-width:560px}
+  th{text-align:left;font-family:var(--mono);font-size:.64rem;letter-spacing:.11em;
+     text-transform:uppercase;color:var(--ink-faint);font-weight:500;
+     padding:0 .65rem .45rem 0;border-bottom:1px solid var(--ink)}
+  td{padding:.45rem .65rem .45rem 0;border-bottom:1px solid var(--hairline)}
+  td.mono{white-space:nowrap}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr{cursor:pointer}
+  tbody tr:hover{background:color-mix(in srgb,var(--cadastre) 7%,transparent)}
+  .chipk{display:inline-block;width:11px;height:11px;border-radius:2px;
+         vertical-align:-1px;margin-right:.4rem}
+
+  .note{margin-top:1.1rem;padding:.8rem 1rem;background:var(--surface);
+    border:1px solid var(--hairline);border-left:3px solid var(--cadastre);
+    border-radius:0 3px 3px 0;font-size:.85rem;color:var(--ink-soft)}
+  .note b{color:var(--ink)}
+  .empty{color:var(--ink-faint);max-width:52ch;margin-top:2.5rem}
+  :focus-visible{outline:2px solid var(--cadastre);outline-offset:2px}
+</style>
+
+<div class="shell">
+  <aside>
+    <div class="brand">
+      <div class="eyebrow">Nexus Analytics</div>
+      <h1>Territoires absorbés</h1>
+      <p class="sub">Le préfixe de section cadastral garde la trace des communes
+        disparues. <span class="mono" id="stat"></span></p>
+    </div>
+    <div class="searchbox">
+      <input type="search" id="q" placeholder="Code INSEE ou nom…" autocomplete="off"
+             aria-label="Rechercher une commune">
+      <div class="hint" id="hint"></div>
+    </div>
+    <div class="results" id="results" role="list"></div>
+  </aside>
+
+  <main id="main">
+    <p class="empty">1 370 communes portent aujourd'hui la géométrie d'au moins une
+      commune disparue, découpée en groupes de sections cadastrales. Choisis-en une.</p>
+  </main>
+</div>
+
+<script id="payload" type="application/json">__DATA__</script>
+<script>
+const D = JSON.parse(document.getElementById('payload').textContent);
+const Q = D.q, C = D.communes;
+const CODES = Object.keys(C).sort();
+
+const norm = s => (s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase();
+const esc = s => (s ?? '').toString().replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const NS = 'http://www.w3.org/2000/svg';
+const el = (n, a={}) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+const NATURE = { noyau:'noyau historique', absorbee:'commune absorbée', quartier:'quartier cadastral' };
+const libelle = p => p.n || (p.t === 'noyau' ? 'noyau historique'
+                    : p.t === 'quartier' ? 'quartier cadastral ' + p.p : 'dénomination inconnue');
+const fdate = d => d ? new Date(d+'T00:00:00Z').toLocaleDateString('fr-FR',{month:'short',year:'numeric'}) : null;
+const yearOf = d => d ? +d.slice(0,4) : null;
+
+document.getElementById('stat').textContent = CODES.length.toLocaleString('fr-FR') + ' communes concernées';
+
+/* ---- décodage delta ---- */
+function ringToPath(flat, X, Y) {
+  let px = 0, py = 0, d = '';
+  for (let i = 0; i < flat.length; i += 2) {
+    px += flat[i]; py += flat[i+1];
+    d += (i ? 'L' : 'M') + X(px/Q).toFixed(1) + ' ' + Y(py/Q).toFixed(1);
+  }
+  return d + 'Z';
+}
+
+/* ---- rampe de couleur : ancienneté de la fusion ---- */
+// L'information encodée est le TEMPS, pas une catégorie arbitraire : plus une
+// absorption est récente, plus la teinte est saturée. Les territoires dont la
+// fusion précède le registre INSEE (avant 1943) restent au ton le plus pâle.
+const RAMP = ['#DCE3E0','#B7CBC6','#8FB3AE','#639892','#3C7D79','#1D5F62'];
+function tint(part) {
+  const y = yearOf(part.f) || yearOf(part.e);
+  if (part.t === 'noyau') return 'var(--core)';
+  if (part.t === 'quartier') return 'var(--quartier)';
+  if (!y) return RAMP[0];
+  if (y < 1950) return RAMP[1];
+  if (y < 1980) return RAMP[2];
+  if (y < 2010) return RAMP[3];
+  if (y < 2019) return RAMP[4];
+  return RAMP[5];
+}
+
+/* ---- recherche ---- */
+const SEARCH = CODES.map(k => ({ code:k, nom:C[k].n, n:norm(C[k].n), abs:C[k].p.filter(p=>p.t==='absorbee').length }))
+  .sort((a,b) => b.abs - a.abs || a.code.localeCompare(b.code));
+const results = document.getElementById('results'), input = document.getElementById('q'), hint = document.getElementById('hint');
+let cur = null;
+
+function draw(list, total) {
+  results.innerHTML = '';
+  hint.textContent = total > list.length ? `${list.length} affichés sur ${total}`
+                    : `${total} résultat${total>1?'s':''}`;
+  for (const r of list) {
+    const b = document.createElement('button');
+    b.className = 'row'; b.type = 'button'; b.setAttribute('role','listitem');
+    if (r.code === cur) b.setAttribute('aria-current','true');
+    b.innerHTML = `<span class="c">${esc(r.code)}</span><span class="n">${esc(r.nom)}</span>`
+                + `<span class="b">+${r.abs}</span>`;
+    b.onclick = () => select(r.code);
+    results.appendChild(b);
+  }
+}
+function find(q) {
+  const k = norm(q).trim();
+  if (!k) return draw(SEARCH.slice(0,80), SEARCH.length);
+  const hits = SEARCH.filter(s => s.code.startsWith(k) || s.n.includes(k));
+  draw(hits.slice(0,80), hits.length);
+}
+input.addEventListener('input', () => find(input.value));
+
+/* ---- fiche ---- */
+function select(code) {
+  cur = code;
+  const c = C[code];
+  const parts = c.p;
+  const absorbes = parts.filter(p => p.t === 'absorbee');
+  const quartiers = parts.filter(p => p.t === 'quartier');
+  const surface = parts.reduce((s,p) => s + (p.k||0), 0);
+
+  document.getElementById('main').innerHTML = `
+    <div class="head">
+      <div class="code">${esc(code)}</div>
+      <h2>${esc(c.n)}</h2>
+      <div class="meta">${parts.length} territoire${parts.length>1?'s':''} cadastral${parts.length>1?'aux':''}
+        · ${absorbes.length} commune${absorbes.length>1?'s':''} absorbée${absorbes.length>1?'s':''}${
+          quartiers.length ? ' · ' + quartiers.length + ' quartier' + (quartiers.length>1?'s':'') + ' cadastral' + (quartiers.length>1?'aux':'') : ''}
+        · ${surface.toFixed(0)} km²</div>
+    </div>
+
+    <div class="block">
+      <span class="eyebrow">Découpage cadastral actuel</span>
+      <h3>Ce que la commune a avalé</h3>
+      <div class="ramp">
+        <span><i style="background:var(--core)"></i> noyau historique</span>
+        <span>fusion :</span>
+        <span><i style="background:${RAMP[1]}"></i> &lt;1950</span>
+        <span><i style="background:${RAMP[2]}"></i> 1950-79</span>
+        <span><i style="background:${RAMP[3]}"></i> 1980-2009</span>
+        <span><i style="background:${RAMP[4]}"></i> 2010-18</span>
+        <span><i style="background:${RAMP[5]}"></i> 2019+</span>
+        <span><i style="background:${RAMP[0]}"></i> date inconnue</span>
+        <span><i style="background:var(--quartier)"></i> quartier cadastral</span>
+      </div>
+      <div class="mapwrap" id="mapwrap">
+        <svg id="map" role="img" aria-label="Carte du découpage de ${esc(c.n)} en ${parts.length} territoires cadastraux historiques"></svg>
+        <div class="tip" id="tip"></div>
+      </div>
+    </div>
+
+    ${absorbes.length ? `
+    <div class="block">
+      <span class="eyebrow">Diagramme de fusion</span>
+      <h3>Chaque ligne s'arrête à sa date d'absorption</h3>
+      <div style="overflow-x:auto"><svg id="merge" role="img"
+        aria-label="Diagramme de fusion : ${absorbes.length} lignes convergeant vers ${esc(c.n)}"></svg></div>
+    </div>` : ''}
+
+    <div class="block">
+      <span class="eyebrow">Détail</span>
+      <h3>Territoires et identités</h3>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Préfixe</th><th>Code reconstitué</th><th>Dénomination</th>
+          <th>Fusion</th><th style="text-align:right">km²</th></tr></thead>
+        <tbody>${parts.map((p,i) => `<tr data-i="${i}">
+          <td class="mono"><i class="chipk" style="background:${tint(p)}"></i>${esc(p.p)}</td>
+          <td class="mono">${p.c ? esc(p.c) : '<span style="color:var(--ink-faint)">—</span>'}</td>
+          <td>${p.n ? esc(p.n) : (p.t==='noyau'
+              ? '<span style="color:var(--ink-faint)">noyau de ' + esc(c.n) + '</span>'
+              : '<span style="color:var(--ink-faint)">quartier cadastral, pas une ancienne commune</span>')}
+              ${p.a ? '' : (p.c ? ' <span class="mono" style="color:var(--insee);font-size:.7rem">hors métadonnée</span>' : '')}</td>
+          <td class="mono">${p.f ? fdate(p.f) : (p.e ? fdate(p.e) : '<span style="color:var(--ink-faint)">avant 1943</span>')}</td>
+          <td class="mono" style="text-align:right">${p.k ?? ''}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </div>
+
+    ${absorbes.some(p => p.c && !p.a) ? `<div class="note">
+      <b>Mémoire au-delà des métadonnées.</b> Certains territoires n'ont pas de champ
+      <code>ancienne</code> renseigné dans le cadastre : leur code a été reconstitué en
+      recollant le département au préfixe, puis confirmé dans le registre INSEE depuis
+      1943. C'est ainsi qu'on récupère des fusions bien antérieures à toute donnée
+      numérique.</div>` : ''}
+  `;
+
+  drawMap(c);
+  if (absorbes.length) drawMerge(c, absorbes);
+  results.querySelectorAll('.row').forEach(r => {
+    r.toggleAttribute('aria-current', r.querySelector('.c').textContent === cur);
+  });
+}
+
+/* ---- la carte ---- */
+function drawMap(c) {
+  const svg = document.getElementById('map'), tip = document.getElementById('tip');
+  const W = 900, PAD = 14;
+  const [x0,y0,x1,y1] = c.b;
+  // correction d'aspect : à cette latitude, un degré de longitude est plus court
+  const kx = Math.cos((y0+y1)/2 * Math.PI/180);
+  const dx = (x1-x0)*kx, dy = (y1-y0);
+  const H = Math.max(320, Math.min(620, Math.round((W-2*PAD) * dy/dx) + 2*PAD));
+  const s = Math.min((W-2*PAD)/dx, (H-2*PAD)/dy);
+  const ox = (W - dx*s)/2, oy = (H - dy*s)/2;
+  const X = lon => ox + (lon-x0)*kx*s;
+  const Y = lat => H - oy - (lat-y0)*s;      // latitude vers le haut
+
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.innerHTML = '';
+
+  const paths = [];
+  c.p.forEach((p, i) => {
+    const d = p.g.map(r => ringToPath(r, X, Y)).join(' ');
+    const path = el('path', { d, fill: tint(p), class:'part', 'fill-rule':'evenodd',
+                              'data-i': i, tabindex: 0 });
+    const label = libelle(p);
+    path.appendChild(el('title')).textContent =
+      label + (p.c ? ' (' + p.c + ')' : '') + (p.k ? ' — ' + p.k + ' km²' : '');
+    svg.appendChild(path);
+    paths.push(path);
+  });
+
+  // étiquettes des territoires assez grands pour en porter une
+  const total = c.p.reduce((a,p)=>a+(p.k||0),0);
+  c.p.forEach(p => {
+    if (!p.k || p.k/total < 0.045) return;
+    let sx=0, sy=0, n=0, best=null, bl=0;
+    for (const r of p.g) if (r.length > bl) { bl = r.length; best = r; }
+    let px=0, py=0;
+    for (let i=0;i<best.length;i+=2){ px+=best[i]; py+=best[i+1]; sx+=px; sy+=py; n++; }
+    const t = el('text',{ x:X(sx/n/Q), y:Y(sy/n/Q), 'text-anchor':'middle', class:'plabel' });
+    t.textContent = p.n || (p.t==='noyau' ? '' : p.p);
+    if (t.textContent) svg.appendChild(t);
+  });
+
+  const wrap = document.getElementById('mapwrap');
+  const show = (i, ev) => {
+    const p = c.p[i];
+    paths.forEach((q,j) => q.classList.toggle('dim', j !== i));
+    tip.innerHTML = `<div class="t">${esc(p.c || 'préfixe ' + p.p)}</div>`
+      + `<div>${esc(libelle(p))}</div>`
+      + `<div class="d">${esc(NATURE[p.t] || '')}</div>`
+      + `<div class="d">${p.k ?? '?'} km²${p.f ? ' · fusion ' + fdate(p.f) : (p.e ? ' · fin ' + fdate(p.e) : ' · avant 1943')}</div>`;
+    tip.classList.add('on');
+    const r = wrap.getBoundingClientRect();
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    tip.style.left = Math.max(4, Math.min(r.width - tw - 4, ev.clientX - r.left + 12)) + 'px';
+    tip.style.top  = Math.max(4, ev.clientY - r.top - th - 10) + 'px';
+  };
+  const hide = () => { paths.forEach(q => q.classList.remove('dim')); tip.classList.remove('on'); };
+  paths.forEach((path,i) => {
+    path.addEventListener('mousemove', e => show(i,e));
+    path.addEventListener('mouseleave', hide);
+    path.addEventListener('focus', e => { const b = path.getBoundingClientRect();
+      show(i, { clientX:b.left+b.width/2, clientY:b.top+b.height/2 }); });
+    path.addEventListener('blur', hide);
+  });
+  document.querySelectorAll('tbody tr[data-i]').forEach(tr => {
+    tr.addEventListener('mouseenter', () => {
+      const i = +tr.dataset.i;
+      paths.forEach((q,j) => q.classList.toggle('dim', j !== i));
+    });
+    tr.addEventListener('mouseleave', hide);
+  });
+}
+
+/* ---- le diagramme de fusion ---- */
+function drawMerge(c, absorbes) {
+  const svg = document.getElementById('merge');
+  const W = 900, rowH = 22, PADT = 34, PADB = 46, L = 200, R = 24;
+  const rows = absorbes.slice().sort((a,b) => (yearOf(a.f)||yearOf(a.e)||1800) - (yearOf(b.f)||yearOf(b.e)||1800));
+  const H = PADT + rows.length*rowH + PADB;
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('style', `min-width:${Math.max(700,W)}px;width:100%;height:auto;display:block`);
+  svg.innerHTML = '';
+
+  const years = rows.map(p => yearOf(p.f) || yearOf(p.e)).filter(Boolean);
+  const yMin = Math.min(1930, ...years) , yMax = Math.max(2026, ...years);
+  const X = y => L + (y - yMin) / (yMax - yMin) * (W - L - R);
+  const yMain = PADT + rows.length*rowH + 12;
+
+  // graduation
+  const step = (yMax - yMin) > 60 ? 20 : 10;
+  for (let y = Math.ceil(yMin/step)*step; y <= yMax; y += step) {
+    svg.appendChild(el('line',{x1:X(y),x2:X(y),y1:PADT-14,y2:yMain+6,
+      stroke:'var(--hairline)','stroke-width':1}));
+    const t = el('text',{x:X(y),y:yMain+24,'text-anchor':'middle',fill:'var(--ink-faint)',
+      'font-family':'var(--mono)','font-size':10.5}); t.textContent = y; svg.appendChild(t);
+  }
+
+  // la ligne maîtresse : la commune survivante
+  svg.appendChild(el('line',{x1:X(yMin),x2:X(yMax),y1:yMain,y2:yMain,
+    stroke:'var(--core)','stroke-width':3,'stroke-linecap':'round'}));
+  const mt = el('text',{x:L-10,y:yMain+4,'text-anchor':'end',fill:'var(--ink)',
+    'font-family':'var(--mono)','font-size':11}); mt.textContent = c.n; svg.appendChild(mt);
+
+  rows.forEach((p, i) => {
+    const y = PADT + i*rowH;
+    const yr = yearOf(p.f) || yearOf(p.e);
+    const xEnd = yr ? X(yr) : X(yMin) + 26;
+    const xStart = X(yMin);
+    const col = tint(p);
+
+    // la vie du territoire, puis la courbe qui plonge dans la ligne maîtresse
+    svg.appendChild(el('path',{
+      d:`M${xStart} ${y} L${xEnd-14} ${y} C${xEnd-4} ${y} ${xEnd} ${y} ${xEnd} ${Math.min(y+14,yMain)}`
+        + ` L${xEnd} ${yMain}`,
+      fill:'none',stroke:col,'stroke-width':2,'stroke-linecap':'round'}));
+    svg.appendChild(el('circle',{cx:xEnd,cy:yMain,r:3,fill:col}));
+
+    const lbl = el('text',{x:L-10,y:y+3.5,'text-anchor':'end',fill:'var(--ink-soft)',
+      'font-family':'var(--mono)','font-size':10.5});
+    lbl.textContent = libelle(p) + (p.c ? ' · ' + p.c : '');
+    svg.appendChild(lbl);
+
+    if (yr) {
+      const d = el('text',{x:xEnd+7,y:y+3.5,fill:'var(--ink-faint)',
+        'font-family':'var(--mono)','font-size':9.5});
+      d.textContent = p.f ? p.f.slice(0,7) : yr;
+      svg.appendChild(d);
+    } else {
+      const d = el('text',{x:xEnd+7,y:y+3.5,fill:'var(--ink-faint)',
+        'font-family':'var(--mono)','font-size':9.5});
+      d.textContent = 'avant 1943';
+      svg.appendChild(d);
+    }
+  });
+}
+
+find('');
+select('74010');
+</script>

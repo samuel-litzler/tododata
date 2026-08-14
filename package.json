@@ -1,0 +1,36 @@
+{
+  "name": "nexus-analytics",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Historique complet du cadastre français — reconstruction de la vie des communes puis des parcelles, à partir des millésimes cadastraux Etalab croisés au COG de l'INSEE.",
+  "scripts": {
+    "dev": "turbo run dev",
+    "dev:web": "pnpm --filter @nexus/web dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "check-types": "turbo run check-types",
+    "clean": "turbo run clean",
+    "db:dev": "docker compose -f docker-compose.dev.yml up -d",
+    "db:dev:down": "docker compose -f docker-compose.dev.yml down",
+    "db:psql": "docker exec -it nexus-database-dev psql -U nexus -d nexus",
+    "etl": "pnpm --filter @nexus/etl cli",
+    "format": "prettier --write \"**/*.{ts,vue,md,json,yaml,yml,css,sql}\"",
+    "format:check": "prettier --check \"**/*.{ts,vue,md,json,yaml,yml,css,sql}\""
+  },
+  "devDependencies": {
+    "prettier": "3.8.1",
+    "turbo": "2.8.13",
+    "typescript": "5.9.3"
+  },
+  "packageManager": "pnpm@10.24.0",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "sharp"
+    ]
+  }
+}

@@ -1,0 +1,94 @@
+# =============================================================================
+# nexus-analytics — stack de dev
+# =============================================================================
+# ⚠️  PORTS : cette machine héberge déjà d'autres Postgres.
+#       5432 → Postgres natif (hôte, hors Docker)
+#       5433 → todoride-database-dev (postgis/postgis:15-3.4-alpine)
+#       5434 → NOUS (surchargeable via DB_HOST_PORT dans .env)
+#     Côté applicatif : 3400 est pris par Umami, l'app Nuxt écoute sur 3450.
+#     Ne jamais publier sur 5432/5433 : on écraserait la stack todoride.
+#
+# ⚠️  MÉMOIRE : le host a 34 Gi mais ~28 Gi sont déjà consommés par les autres
+#     stacks (todoride, cvc, valhalla, photon, open-meteo) + 18 Gi de swap actif.
+#     Les mem_limit ci-dessous sont volontairement bas. Pour un run lourd
+#     (ingestion des parcelles), arrêter les stacks concurrentes puis relancer
+#     avec le profil heavy — voir infra/docker/README.md.
+# =============================================================================
+
+services:
+  # Postgres 17 + PostGIS 3.5.
+  # 4 Go : ~1,5 Go de shared_buffers + 1 Go de maintenance_work_mem pendant les
+  # CREATE INDEX GIST + marge pour les work_mem des tris géométriques.
+  #
+  # ⚠️  Variante ALPINE choisie délibérément, ce n'est PAS un détail de taille d'image :
+  #     - alpine  → GEOS 3.14.1
+  #     - debian  → GEOS 3.9.0 (l'image bullseye est figée sur une vieille libgeos)
+  #     GEOS ≥ 3.12 apporte ST_CoverageInvalidEdges / ST_CoverageSimplify /
+  #     ST_CoverageUnion, qui sont exactement l'outil pour valider qu'un département
+  #     forme une couverture communale sans trou ni recouvrement — le contrôle
+  #     topologique central de ce projet. Et ST_MakeValid(...,'method=structure')
+  #     y est nettement plus fiable sur les polygones cadastraux dégénérés.
+  #     Ne pas repasser sur l'image debian.
+  database:
+    image: postgis/postgis:17-3.5-alpine
+    container_name: nexus-database-dev
+    restart: unless-stopped
+    mem_limit: ${DB_MEM_LIMIT:-4g}
+    shm_size: 1gb # PostGIS + parallel workers : le /dev/shm par défaut (64 Mo) fait
+      # échouer les gros tris parallèles avec "could not resize shared memory".
+    command:
+      - postgres
+      - -c
+      - config_file=/etc/postgresql/postgresql.conf
+    environment:
+      POSTGRES_DB: ${DB_NAME:-nexus}
+      POSTGRES_USER: ${DB_USER:-nexus}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-nexus_dev}
+      # Collation C.UTF-8 = ordre binaire : déterministe, rapide, et surtout
+      # reproductible d'une machine à l'autre (une collation fr-FR peut changer
+      # de comportement selon la version d'ICU/glibc et casser des index).
+      # Le rapprochement de noms accentués ne passe PAS par la collation mais
+      # par unaccent + pg_trgm, explicitement, dans les règles de réconciliation.
+      POSTGRES_INITDB_ARGS: '--encoding=UTF8 --locale=C.UTF-8'
+    ports:
+      - '${DB_HOST_PORT:-5434}:5432'
+    volumes:
+      # Bind mount explicite : ce volume va grossir jusqu'à plusieurs centaines
+      # de Go. On le veut visible et pilotable (df, du, rm), pas noyé dans
+      # /var/lib/docker/volumes.
+      - ${DB_DATA_DIR:-/home/bbw/data/nexus-cadastre/pgdata}:/var/lib/postgresql/data
+      - ./infra/docker/postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./infra/docker/init-extensions.sql:/docker-entrypoint-initdb.d/10-extensions.sql:ro
+      # Répertoire de travail partagé host <-> container : permet le COPY
+      # côté serveur (bien plus rapide que \copy client) sur les gros dumps.
+      - ${DATA_DIR:-/home/bbw/data/nexus-cadastre/work}:/work
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${DB_USER:-nexus} -d ${DB_NAME:-nexus}']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - nexus-network
+
+  # Console SQL web. Utile pour inspecter les géométries sans quitter le navigateur.
+  # 8181 : 8180 est déjà pris par cvc-adminer-dev.
+  adminer:
+    image: adminer:latest
+    container_name: nexus-adminer-dev
+    restart: unless-stopped
+    mem_limit: 256m
+    ports:
+      - '${ADMINER_HOST_PORT:-8181}:8080'
+    environment:
+      ADMINER_DEFAULT_SERVER: database
+    depends_on:
+      database:
+        condition: service_healthy
+    networks:
+      - nexus-network
+
+networks:
+  nexus-network:
+    name: nexus-network
+    driver: bridge

@@ -1,0 +1,12 @@
+{
+  "name": "@nexus/eslint-config",
+  "version": "0.1.0",
+  "private": true,
+  "exports": {
+    "./base": "./base.js"
+  },
+  "devDependencies": {
+    "eslint": "10.8.1",
+    "typescript-eslint": "8.67.0"
+  }
+}

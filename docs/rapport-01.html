@@ -1,0 +1,636 @@
+<title>Décalage Cadastral</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  /* ============================================================
+     Palette « registre cadastral » :
+       — l'INSEE est le registre légal      → ocre, encre sur papier
+       — le cadastre est la mesure physique → turquoise d'instrument
+       — le vermillon n'est JAMAIS décoratif : il ne marque que l'écart
+     Neutres biaisés vers l'ardoise bleutée, pas de gris pur.
+     ============================================================ */
+  :root {
+    --ground:      #EDF0F1;
+    --surface:     #F7F9F9;
+    --surface-alt: #E3E8E9;
+    --hairline:    #C7D0D2;
+    --ink:         #131A20;
+    --ink-soft:    #47555E;
+    --ink-faint:   #7C8B93;
+
+    --insee:       #A6741B;
+    --insee-wash:  #A6741B1A;
+    --cadastre:    #16696D;
+    --cadastre-wash:#16696D1A;
+    --ecart:       #B33A22;
+    --ecart-wash:  #B33A2214;
+    --valide:      #2F6B45;
+
+    --display: Georgia, 'Iowan Old Style', 'Palatino Linotype', Palatino, serif;
+    --body: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    --mono: ui-monospace, 'SF Mono', SFMono-Regular, 'Cascadia Mono', Menlo, Consolas, monospace;
+
+    --measure: 68ch;
+    --gutter: clamp(1.1rem, 4vw, 2.75rem);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground:      #0E1418;
+      --surface:     #151D22;
+      --surface-alt: #1E282E;
+      --hairline:    #2E3C44;
+      --ink:         #E4EAEC;
+      --ink-soft:    #A3B2B9;
+      --ink-faint:   #6F8189;
+
+      --insee:       #D9A441;
+      --insee-wash:  #D9A44120;
+      --cadastre:    #46B3B3;
+      --cadastre-wash:#46B3B320;
+      --ecart:       #E4785C;
+      --ecart-wash:  #E4785C1A;
+      --valide:      #6BBF8A;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground:      #0E1418;
+    --surface:     #151D22;
+    --surface-alt: #1E282E;
+    --hairline:    #2E3C44;
+    --ink:         #E4EAEC;
+    --ink-soft:    #A3B2B9;
+    --ink-faint:   #6F8189;
+
+    --insee:       #D9A441;
+    --insee-wash:  #D9A44120;
+    --cadastre:    #46B3B3;
+    --cadastre-wash:#46B3B320;
+    --ecart:       #E4785C;
+    --ecart-wash:  #E4785C1A;
+    --valide:      #6BBF8A;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--body);
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 0 var(--gutter); }
+  .col  { max-width: var(--measure); }
+
+  h1, h2, h3 { font-family: var(--display); font-weight: 600; text-wrap: balance; margin: 0; letter-spacing: -0.011em; }
+  p { margin: 0; }
+  .stack   { display: flex; flex-direction: column; gap: 1.05rem; }
+  .stack-s { display: flex; flex-direction: column; gap: .5rem; }
+
+  .eyebrow {
+    font-family: var(--mono); font-size: .69rem; letter-spacing: .17em;
+    text-transform: uppercase; color: var(--ink-faint);
+  }
+  code, .mono, .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+  code { font-size: .87em; background: var(--surface-alt); padding: .1em .36em; border-radius: 2px; }
+
+  /* ---------- en-tête ---------- */
+  header.masthead { border-bottom: 2px solid var(--ink); padding: clamp(2.5rem,7vw,4.5rem) 0 1.6rem; }
+  header.masthead h1 { font-size: clamp(2.5rem, 7vw, 4.4rem); line-height: 1.02; }
+  .dek { font-size: clamp(1.02rem,2.1vw,1.2rem); color: var(--ink-soft); max-width: 56ch; margin-top: 1.1rem; }
+  .runline {
+    display: flex; flex-wrap: wrap; gap: .5rem 1.6rem; margin-top: 1.8rem;
+    font-family: var(--mono); font-size: .74rem; color: var(--ink-faint);
+  }
+  .runline b { color: var(--ink-soft); font-weight: 500; }
+
+  /* ---------- bandeau de chiffres ---------- */
+  .ledger {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    border-bottom: 1px solid var(--hairline);
+  }
+  .ledger div { padding: 1.5rem 1.2rem 1.5rem 0; border-right: 1px solid var(--hairline); }
+  .ledger div:last-child { border-right: 0; }
+  .ledger .v { font-family: var(--mono); font-size: clamp(1.6rem,4vw,2.15rem); font-variant-numeric: tabular-nums; line-height: 1; letter-spacing: -.02em; }
+  .ledger .k { font-family: var(--mono); font-size: .68rem; letter-spacing: .13em; text-transform: uppercase; color: var(--ink-faint); margin-top: .6rem; }
+  .ledger .ok { color: var(--valide); }
+
+  /* ---------- sections ---------- */
+  section { padding: clamp(3rem,7vw,5rem) 0; border-bottom: 1px solid var(--hairline); }
+  section h2 { font-size: clamp(1.5rem,3.4vw,2.05rem); margin-top: .5rem; }
+  .lede { font-size: 1.06rem; color: var(--ink-soft); }
+
+  /* ---------- graphiques ---------- */
+  figure { margin: 2.4rem 0 0; }
+  .plot { width: 100%; overflow-x: auto; }
+  .plot svg { display: block; min-width: 560px; width: 100%; height: auto; }
+  figcaption { font-size: .85rem; color: var(--ink-faint); margin-top: .9rem; max-width: 62ch; }
+  .key { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; font-family: var(--mono); font-size: .74rem; margin-bottom: 1rem; }
+  .key span { display: inline-flex; align-items: center; gap: .45rem; color: var(--ink-soft); }
+  .swatch { width: 15px; height: 3px; border-radius: 2px; }
+
+  /* ---------- tableaux ---------- */
+  .tablewrap { overflow-x: auto; margin-top: 1.8rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .89rem; min-width: 480px; }
+  th {
+    text-align: left; font-family: var(--mono); font-size: .67rem; letter-spacing: .12em;
+    text-transform: uppercase; color: var(--ink-faint); font-weight: 500;
+    padding: 0 .8rem .6rem 0; border-bottom: 1px solid var(--ink);
+  }
+  td { padding: .62rem .8rem .62rem 0; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+  td.n, th.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; padding-right: 0; }
+  tbody tr:last-child td { border-bottom: 0; }
+
+  .tag {
+    display: inline-block; font-family: var(--mono); font-size: .68rem; letter-spacing: .04em;
+    padding: .13em .5em; border-radius: 2px; white-space: nowrap;
+  }
+  .t-struct { background: var(--cadastre-wash); color: var(--cadastre); }
+  .t-manque { background: var(--ecart-wash); color: var(--ecart); }
+
+  /* ---------- étude de cas : deux pistes ---------- */
+  .case { margin-top: 2.6rem; background: var(--surface); border: 1px solid var(--hairline); border-radius: 3px; overflow: hidden; }
+  .case-hd { padding: 1.4rem clamp(1rem,3vw,1.8rem); border-bottom: 1px solid var(--hairline); display: flex; flex-wrap: wrap; gap: .3rem 1.5rem; align-items: baseline; }
+  .case-hd .who { font-family: var(--mono); font-size: 1.02rem; }
+  .case-hd .sub { font-size: .84rem; color: var(--ink-faint); }
+  .case-body { padding: clamp(1rem,3vw,1.8rem); }
+
+  .verdict {
+    margin-top: 1.6rem; padding: 1.1rem 1.3rem; background: var(--ecart-wash);
+    border-left: 3px solid var(--ecart); border-radius: 0 3px 3px 0; font-size: .95rem;
+  }
+  .verdict b { color: var(--ecart); }
+
+  .callout {
+    margin-top: 1.8rem; padding: 1.15rem 1.35rem; background: var(--surface);
+    border: 1px solid var(--hairline); border-left: 3px solid var(--cadastre);
+    border-radius: 0 3px 3px 0; font-size: .95rem;
+  }
+  .callout .eyebrow { display: block; margin-bottom: .45rem; color: var(--cadastre); }
+
+  ul.clean { margin: 0; padding-left: 1.15rem; }
+  ul.clean li { margin-bottom: .55rem; }
+  ul.clean li::marker { color: var(--ink-faint); }
+
+  footer { padding: 3rem 0 4.5rem; color: var(--ink-faint); font-size: .85rem; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .reveal { animation: rise .55s cubic-bezier(.22,.7,.3,1) both; }
+    @keyframes rise { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: none; } }
+  }
+  :focus-visible { outline: 2px solid var(--cadastre); outline-offset: 2px; }
+</style>
+
+<div class="wrap">
+  <header class="masthead reveal">
+    <div class="eyebrow">Nexus Analytics — reconstruction de l'historique communal</div>
+    <h1>Décalage&nbsp;Cadastral</h1>
+    <p class="dek">
+      Une commune fusionne à une date. Le cadastre le constate à une autre. Premier passage de
+      validation croisée sur 32 millésimes, confrontant la géométrie cadastrale au registre
+      officiel de l'INSEE.
+    </p>
+    <div class="runline">
+      <span><b>32</b> millésimes · 2018-04-03 → 2026-06-01</span>
+      <span><b>1 106 523</b> observations</span>
+      <span><b>14 Go</b> en base</span>
+      <span>PostGIS 3.5.7 · GEOS 3.14.1</span>
+    </div>
+  </header>
+
+  <div class="ledger reveal">
+    <div><div class="v ok">514/514</div><div class="k">disparitions expliquées</div></div>
+    <div><div class="v">273 j</div><div class="k">retard médian du cadastre</div></div>
+    <div><div class="v">53</div><div class="k">écarts avec le COG</div></div>
+    <div><div class="v ok">94/95</div><div class="k">trous comblés</div></div>
+  </div>
+
+  <section>
+    <div class="col stack">
+      <div class="eyebrow">Le constat</div>
+      <h2>Deux sources qui ne comptent pas la même chose</h2>
+      <p class="lede">
+        Entre 2018 et 2026, le nombre de communes au cadastre <em>augmente</em> de 33 304 à 34 916.
+        Sur la même période, l'INSEE en compte de moins en moins : 35 356 puis 34 875. Les deux
+        courbes se croisent fin 2022.
+      </p>
+      <p>
+        Ce n'est pas une contradiction, c'est deux phénomènes distincts qui se superposent.
+        L'INSEE enregistre des fusions — le mouvement réel du territoire. Le cadastre, lui,
+        finissait encore de <em>vectoriser la France</em> : chaque millésime ajoutait des communes
+        qui n'avaient jamais été numérisées. La montée cadastrale est un artefact de couverture,
+        pas une création de communes.
+      </p>
+      <p>
+        Toute règle du type « le nombre de communes doit décroître » aurait produit
+        des milliers de fausses alertes sur cette période.
+      </p>
+    </div>
+
+    <figure>
+      <div class="key">
+        <span><i class="swatch" style="background:var(--insee)"></i> INSEE — communes de plein exercice</span>
+        <span><i class="swatch" style="background:var(--cadastre)"></i> Cadastre — communes observées</span>
+      </div>
+      <div class="plot"><svg id="chart-couverture" viewBox="0 0 900 340" role="img"
+        aria-label="Deux courbes 2018-2026 : l'INSEE décroît de 35 356 à 34 875 communes, le cadastre croît de 33 304 à 34 916. Elles se croisent fin 2022."></svg></div>
+      <figcaption>
+        Le croisement de fin 2022 marque le moment où la vectorisation cadastrale rattrape puis
+        dépasse le compte administratif — l'excédent final tient aux arrondissements municipaux
+        et aux collectivités d'outre-mer, détaillés plus bas.
+      </figcaption>
+    </figure>
+  </section>
+
+  <section>
+    <div class="col stack">
+      <div class="eyebrow">Validation nº 1 — les disparitions</div>
+      <h2>514 codes disparaissent. Aucun n'est inexpliqué.</h2>
+      <p class="lede">
+        En comparant chaque millésime au précédent, 514 codes INSEE cessent d'apparaître dans les
+        géométries. Chacun a été confronté au fichier des mouvements de l'INSEE.
+      </p>
+      <p>
+        La totalité correspond à un mouvement administratif réel — très majoritairement le
+        code&nbsp;32, « création de commune nouvelle », qui domine l'ère cadastrale avec
+        2 964 mouvements depuis 2017.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Mouvement INSEE constaté</th><th>Libellé officiel</th><th class="n">Disparitions</th></tr></thead>
+        <tbody>
+          <tr><td><code>32</code></td><td>Création de commune nouvelle</td><td class="n">501</td></tr>
+          <tr><td><code>32</code> + <code>33</code></td><td>Commune nouvelle après fusion-association</td><td class="n">5</td></tr>
+          <tr><td><code>50</code></td><td>Changement de code par transfert de chef-lieu</td><td class="n">4</td></tr>
+          <tr><td><code>41</code></td><td>Changement de code par changement de département</td><td class="n">2</td></tr>
+          <tr><td><code>20</code> + <code>32</code></td><td>Création puis commune nouvelle</td><td class="n">1</td></tr>
+          <tr><td><code>21</code> + <code>32</code></td><td>Rétablissement puis commune nouvelle</td><td class="n">1</td></tr>
+          <tr><td style="color:var(--valide)"><b>Inexpliqué</b></td><td style="color:var(--valide)">aucun mouvement INSEE correspondant</td><td class="n" style="color:var(--valide)"><b>0</b></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col callout">
+      <span class="eyebrow">Piège rencontré</span>
+      Sept disparitions affichaient un écart absurde de 13 000 à 17 000 jours. Ce n'était pas la
+      donnée : ma requête rapprochait le <em>premier</em> mouvement du code, remontant aux
+      fusions-associations des années 1970, au lieu du mouvement contemporain de la disparition.
+      Le rapprochement doit se faire sur l'événement le plus proche, pas le plus ancien.
+    </div>
+  </section>
+
+  <section>
+    <div class="col stack">
+      <div class="eyebrow">Validation nº 2 — le temps</div>
+      <h2>Le cadastre a neuf mois de retard, en médiane</h2>
+      <p class="lede">
+        Une fusion prend effet au 1<sup>er</sup> janvier. Le cadastre ne la constate pas
+        immédiatement. L'écart entre la date légale et le dernier millésime où le code
+        reste visible est la mesure la plus utile de tout ce passage.
+      </p>
+      <p>
+        Les 167 cas à &minus;92 jours ne sont pas des anomalies : ils signalent une
+        synchronisation <em>parfaite</em>. Le dernier millésime où le code apparaît est celui
+        d'octobre précédent, exactement comme attendu pour une fusion au 1<sup>er</sup> janvier.
+      </p>
+    </div>
+
+    <figure>
+      <div class="plot"><svg id="chart-retard" viewBox="0 0 900 250" role="img"
+        aria-label="Répartition des 514 disparitions par retard : 167 synchrones, 338 jusqu'à un an, 8 au-delà d'un an."></svg></div>
+      <figcaption>
+        Répartition des 514 disparitions selon l'écart entre la date d'effet légale et la dernière
+        observation cadastrale. Médiane à 273 jours, 90<sup>e</sup> centile à 365 jours.
+      </figcaption>
+    </figure>
+
+    <div class="col verdict">
+      <b>Conséquence pour le modèle.</b> Aucune règle ne peut assimiler « absent du cadastre » à
+      « n'existe plus ». Sur une fenêtre d'un an, les deux sources se contredisent
+      légitimement. La validité administrative et l'observation cadastrale sont deux axes
+      temporels distincts, et le modèle doit porter les deux.
+    </div>
+  </section>
+
+  <section>
+    <div class="col stack">
+      <div class="eyebrow">Étude de cas</div>
+      <h2>Mesnils-sur-Iton, ou le pire scénario</h2>
+      <p class="lede">
+        Douze mouvements INSEE entre 2019 et 2022. Trois communes absorbées qui apparaissent
+        au cadastre <em>le jour même</em> où elles cessent légalement d'exister — et y restent
+        un an.
+      </p>
+    </div>
+
+    <div class="case">
+      <div class="case-hd">
+        <span class="who">27198</span>
+        <span class="sub">Mesnils-sur-Iton — Eure</span>
+        <span class="sub" style="margin-left:auto">Damville jusqu'en 2016</span>
+      </div>
+      <div class="case-body">
+        <div class="key">
+          <span><i class="swatch" style="background:var(--insee)"></i> Registre INSEE — date d'effet légale</span>
+          <span><i class="swatch" style="background:var(--cadastre)"></i> Cadastre — millésimes où le code est visible</span>
+          <span><i class="swatch" style="background:var(--ecart)"></i> Zone de contradiction</span>
+        </div>
+        <div class="plot"><svg id="chart-cas" viewBox="0 0 900 300" role="img"
+          aria-label="Deux pistes temporelles. En haut le registre INSEE : commune nouvelle en 2016, absorption de trois communes au 1er janvier 2019, suppression des communes déléguées en juin 2022. En bas le cadastre : les codes 27297, 27416 et 27491 sont visibles de janvier 2019 à janvier 2020, soit un an après leur disparition légale."></svg></div>
+      </div>
+    </div>
+
+    <div class="col verdict">
+      <b>Grandvilliers, Buis-sur-Damville et Roman</b> fusionnent dans Mesnils-sur-Iton au
+      1<sup>er</sup> janvier 2019. Elles font leur première apparition dans les données
+      cadastrales à cette date exacte, puis persistent sur cinq millésimes consécutifs
+      jusqu'au 1<sup>er</sup> janvier 2020. Leur vectorisation s'est achevée juste au moment
+      où elles disparaissaient du droit.
+    </div>
+  </section>
+
+  <section>
+    <div class="col stack">
+      <div class="eyebrow">Validation nº 3 — le périmètre</div>
+      <h2>Les 53 écarts avec le COG sont tous structurels</h2>
+      <p class="lede">
+        Au millésime 2026-06-01, le cadastre porte 34 916 communes et le COG 34 875. Les 47 codes
+        en trop et les 6 manquants se décomposent intégralement — aucun n'est une erreur.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Écart</th><th class="n">Codes</th><th>Nature</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Arrondissements municipaux</td><td class="n">45</td>
+            <td><span class="tag t-struct">structurel</span> Le cadastre découpe Paris, Lyon et Marseille par arrondissement
+            (<code>75101</code>–<code>75120</code>, <code>69381</code>–<code>69389</code>,
+            <code>13201</code>–<code>13216</code>) ; le COG les porte en communes uniques.</td>
+          </tr>
+          <tr>
+            <td>Collectivités d'outre-mer</td><td class="n">2</td>
+            <td><span class="tag t-struct">structurel</span> Saint-Barthélemy <code>97123</code> et Saint-Martin <code>97127</code>,
+            sorties du COG en 2007, restent cadastrées — le cadastre est un référentiel foncier, pas administratif.</td>
+          </tr>
+          <tr>
+            <td>Communes de PLM au COG</td><td class="n">3</td>
+            <td><span class="tag t-struct">structurel</span> <code>75056</code> Paris, <code>69123</code> Lyon,
+            <code>13055</code> Marseille — contreparties des 45 arrondissements.</td>
+          </tr>
+          <tr>
+            <td>Communes sans cadastre</td><td class="n">3</td>
+            <td><span class="tag t-manque">absence permanente</span> Île-de-Sein <code>29083</code>,
+            Île-Molène <code>29084</code>, Suzan <code>09304</code> n'ont aucune couverture
+            cadastrale vectorisée et n'en auront jamais.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col callout">
+      <span class="eyebrow">Ce que ça impose</span>
+      Une table de correspondance arrondissement ↔ commune, et une liste explicite de communes
+      sans géométrie attendue. Sans elles, ces 53 cas remonteraient comme anomalies à chaque
+      exécution, sur chacun des 32 millésimes.
+    </div>
+  </section>
+
+  <section>
+    <div class="col stack">
+      <div class="eyebrow">Validation nº 4 — les trous</div>
+      <h2>94 trous comblés, 1 préservé</h2>
+      <p class="lede">
+        95 codes disparaissent d'un ou plusieurs millésimes puis reviennent. Décision prise :
+        ce sont des défauts de publication en amont, on comble et on trace.
+      </p>
+      <p>
+        Mais pas aveuglément. Un <em>rétablissement de commune</em> produit exactement la même
+        signature qu'un défaut de source, et effacer l'un avec l'autre détruirait un événement
+        administratif réel. Le tri se fait sur deux conditions conjointes : il existe un
+        mouvement INSEE de code <code>21</code> ou <code>71</code> aboutissant à ce code,
+        <em>et</em> sa date d'effet tombe dans la fenêtre du trou — élargie d'un an en amont pour
+        absorber le retard médian mesuré plus haut.
+      </p>
+      <p>
+        Sans la contrainte de date, quatre trous semblaient être des rétablissements. Trois
+        d'entre eux — Llo <code>66100</code>, Bressuire <code>79049</code>,
+        Brion-près-Thouet <code>79056</code> — portaient bien un mouvement <code>21</code>,
+        mais daté de <b>1983 et 1984</b>, sans aucun rapport avec leur absence de 2020-2022.
+        C'est le même piège que les aberrations à 17 000 jours : rapprocher un code d'un
+        événement lointain plutôt que du bon.
+      </p>
+      <p>
+        Un seul survit au filtre : <code>60694</code> Les Hauts-Talican, absente du cadastre
+        pendant 19 millésimes et rétablie au 1<sup>er</sup> janvier 2024.
+      </p>
+    </div>
+
+    <div class="tablewrap">
+      <table>
+        <thead><tr><th>Événement de présence</th><th class="n">Données brutes</th><th class="n">Après consolidation</th></tr></thead>
+        <tbody>
+          <tr><td>Disparitions</td><td class="n">514</td><td class="n">514</td></tr>
+          <tr><td>Interruptions (trous)</td><td class="n">95</td><td class="n" style="color:var(--valide)">1</td></tr>
+          <tr><td>Réapparitions</td><td class="n">95</td><td class="n" style="color:var(--valide)">1</td></tr>
+          <tr><td>Apparitions réelles</td><td class="n">2 126</td><td class="n">2 126</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="col callout">
+      <span class="eyebrow">Ce que ça vaut</span>
+      Les 514 disparitions sont inchangées : les deux phénomènes étaient bien disjoints, aucune
+      disparition réelle n'était un trou déguisé. 339 observations ont été comblées sur
+      1 106 523, et chaque comblement reste tracé dans le journal d'anomalies — les 32 trous
+      de plus d'un an y sont marqués pour un examen ultérieur.
+    </div>
+  </section>
+
+  <section>
+    <div class="col stack">
+      <div class="eyebrow">Reste à traiter</div>
+      <h2>Ce que ce premier passage ne dit pas encore</h2>
+      <ul class="clean">
+        <li><b>La géométrie elle-même.</b> Ce passage ne compare que des identités et des dates.
+          Distinguer un vrai changement de périmètre d'une simple amélioration du levé demande
+          des métriques surfaciques — c'est le problème dur, et l'outillage est en place
+          (<code>ST_CoverageInvalidEdges</code> exige GEOS ≥ 3.12, d'où le choix de l'image Alpine).</li>
+        <li><b>Les trois millésimes de 2017.</b> Antérieurs à tout agrégat national, ils n'existent
+          qu'en ~35 000 fichiers par commune. Ils rallongeraient l'historique d'un an.</li>
+        <li><b>Le graphe de filiation.</b> Les rétablissements de communes (codes 21 et 71, tous
+          récents) prouvent qu'une disparition n'est pas un état terminal. Le modèle doit
+          l'admettre nativement.</li>
+        <li><b>Les parcelles.</b> 195 Go compressés sur 35 millésimes — l'ordre de grandeur qui
+          dimensionnera réellement le projet.</li>
+      </ul>
+    </div>
+  </section>
+
+  <footer>
+    <div class="col stack-s">
+      <div class="eyebrow">Sources</div>
+      <p>Cadastre Etalab (PCI vectorisé), millésimes 2018-04-03 à 2026-06-01, via le bucket S3
+      <code>cadastre.s3.rbx.io.cloud.ovh.net</code>. Code officiel géographique de l'INSEE au
+      1<sup>er</sup> janvier 2026 : <code>v_commune_2026</code>, <code>v_mvt_commune_2026</code>,
+      <code>v_commune_depuis_1943</code>.</p>
+      <p style="margin-top:.6rem">Passage exécuté le 14 août 2026 sur PostgreSQL 17.10 / PostGIS 3.5.7.</p>
+    </div>
+  </footer>
+</div>
+
+<script>
+const MIL = ["2018-04-03","2018-06-29","2018-10-01","2019-01-01","2019-04-01","2019-07-01","2019-10-01","2020-01-01","2020-07-01","2020-10-01","2021-02-01","2021-04-01","2021-07-01","2021-10-01","2022-01-01","2022-04-01","2022-07-01","2022-10-01","2023-01-01","2023-04-01","2023-07-01","2023-10-01","2024-01-01","2024-04-01","2024-07-01","2024-10-01","2025-01-01","2025-04-01","2025-09-01","2025-12-01","2026-03-01","2026-06-01"];
+const CAD = [33304,33529,33678,33716,33841,34009,34101,34173,34423,34511,34600,34632,34669,34705,34747,34837,34901,34916,34930,34947,34954,34961,34957,34963,34964,34966,34937,34940,34947,34933,34916,34916];
+const INS = [35356,35356,35356,34970,34967,34967,34967,34968,34968,34968,34965,34965,34965,34965,34955,34955,34955,34955,34945,34945,34945,34945,34935,34935,34935,34935,34875,34875,34875,34875,34875,34875];
+
+const NS = "http://www.w3.org/2000/svg";
+const el = (n, a = {}) => { const e = document.createElementNS(NS, n); for (const k in a) e.setAttribute(k, a[k]); return e; };
+const t  = d => new Date(d + "T00:00:00Z").getTime();
+
+/* ---------- 1. courbes de couverture ---------- */
+(function () {
+  const svg = document.getElementById("chart-couverture");
+  const W = 900, H = 340, L = 62, R = 16, T = 18, B = 40;
+  const x0 = t(MIL[0]), x1 = t(MIL[MIL.length - 1]);
+  const yLo = 33100, yHi = 35500;
+  const X = d => L + (t(d) - x0) / (x1 - x0) * (W - L - R);
+  const Y = v => T + (yHi - v) / (yHi - yLo) * (H - T - B);
+
+  for (let v = 33500; v <= 35500; v += 500) {
+    svg.appendChild(el("line", { x1: L, x2: W - R, y1: Y(v), y2: Y(v), stroke: "var(--hairline)", "stroke-width": 1 }));
+    const lab = el("text", { x: L - 10, y: Y(v) + 4, "text-anchor": "end", fill: "var(--ink-faint)",
+      "font-family": "var(--mono)", "font-size": 11 });
+    lab.textContent = v.toLocaleString("fr-FR");
+    svg.appendChild(lab);
+  }
+  ["2019-01-01","2021-01-01","2023-01-01","2025-01-01"].forEach(d => {
+    const lab = el("text", { x: X(d), y: H - 14, "text-anchor": "middle", fill: "var(--ink-faint)",
+      "font-family": "var(--mono)", "font-size": 11 });
+    lab.textContent = d.slice(0, 4);
+    svg.appendChild(lab);
+  });
+
+  const path = (vals, color, dash) => {
+    const d = MIL.map((m, i) => (i ? "L" : "M") + X(m).toFixed(1) + " " + Y(vals[i]).toFixed(1)).join(" ");
+    svg.appendChild(el("path", { d, fill: "none", stroke: color, "stroke-width": 2.4,
+      "stroke-linejoin": "round", "stroke-linecap": "round", ...(dash ? { "stroke-dasharray": dash } : {}) }));
+    svg.appendChild(el("circle", { cx: X(MIL[MIL.length - 1]), cy: Y(vals[vals.length - 1]), r: 4, fill: color }));
+  };
+  path(INS, "var(--insee)", "5 4");
+  path(CAD, "var(--cadastre)");
+
+  // le croisement : seul moment annoté
+  const cross = "2022-10-01", ci = MIL.indexOf(cross);
+  svg.appendChild(el("line", { x1: X(cross), x2: X(cross), y1: T, y2: H - B,
+    stroke: "var(--ecart)", "stroke-width": 1, "stroke-dasharray": "2 3", opacity: .8 }));
+  const ann = el("text", { x: X(cross) - 8, y: T + 26, "text-anchor": "end", fill: "var(--ecart)",
+    "font-family": "var(--mono)", "font-size": 11.5 });
+  ann.textContent = "croisement";
+  svg.appendChild(ann);
+  svg.appendChild(el("circle", { cx: X(cross), cy: Y(CAD[ci]), r: 3.5, fill: "var(--ecart)" }));
+})();
+
+/* ---------- 2. barres de retard ---------- */
+(function () {
+  const svg = document.getElementById("chart-retard");
+  const data = [
+    { k: "synchrone (−92 j)",  v: 167, c: "var(--valide)" },
+    { k: "≤ 1 trimestre",      v: 1,   c: "var(--cadastre)" },
+    { k: "≤ 2 trimestres",     v: 1,   c: "var(--cadastre)" },
+    { k: "≤ 1 an",             v: 337, c: "var(--insee)" },
+    { k: "> 1 an",             v: 8,   c: "var(--ecart)" }
+  ];
+  const W = 900, L = 168, R = 60, T = 10, rowH = 42;
+  const max = 337;
+  data.forEach((d, i) => {
+    const y = T + i * rowH;
+    const lab = el("text", { x: L - 14, y: y + 21, "text-anchor": "end", fill: "var(--ink-soft)",
+      "font-family": "var(--mono)", "font-size": 12 });
+    lab.textContent = d.k;
+    svg.appendChild(lab);
+    const w = Math.max(2, d.v / max * (W - L - R));
+    svg.appendChild(el("rect", { x: L, y: y + 6, width: w, height: 22, fill: d.c, rx: 2 }));
+    const val = el("text", { x: L + w + 10, y: y + 21, fill: "var(--ink-soft)",
+      "font-family": "var(--mono)", "font-size": 12.5, "font-variant-numeric": "tabular-nums" });
+    val.textContent = d.v;
+    svg.appendChild(val);
+  });
+})();
+
+/* ---------- 3. étude de cas : deux pistes ---------- */
+(function () {
+  const svg = document.getElementById("chart-cas");
+  const W = 900, L = 20, R = 20, yI = 92, yC = 196;
+  const x0 = t("2015-06-01"), x1 = t("2026-12-01");
+  const X = d => L + (t(d) - x0) / (x1 - x0) * (W - L - R);
+
+  // graduation annuelle
+  for (let y = 2016; y <= 2026; y += 2) {
+    const d = y + "-01-01";
+    svg.appendChild(el("line", { x1: X(d), x2: X(d), y1: 40, y2: 250, stroke: "var(--hairline)", "stroke-width": 1 }));
+    const lab = el("text", { x: X(d), y: 270, "text-anchor": "middle", fill: "var(--ink-faint)",
+      "font-family": "var(--mono)", "font-size": 11 });
+    lab.textContent = y;
+    svg.appendChild(lab);
+  }
+
+  // bande de contradiction : 2019-01-01 → 2020-01-01
+  svg.appendChild(el("rect", { x: X("2019-01-01"), y: 40, width: X("2020-01-01") - X("2019-01-01"),
+    height: 210, fill: "var(--ecart-wash)" }));
+  [["2019-01-01"], ["2020-01-01"]].forEach(([d]) =>
+    svg.appendChild(el("line", { x1: X(d), x2: X(d), y1: 40, y2: 250,
+      stroke: "var(--ecart)", "stroke-width": 1.2, "stroke-dasharray": "3 3" })));
+  const zl = el("text", { x: (X("2019-01-01") + X("2020-01-01")) / 2, y: 32, "text-anchor": "middle",
+    fill: "var(--ecart)", "font-family": "var(--mono)", "font-size": 11.5 });
+  zl.textContent = "contradiction · 12 mois";
+  svg.appendChild(zl);
+
+  const track = (y, color, label) => {
+    svg.appendChild(el("line", { x1: L, x2: W - R, y1: y, y2: y, stroke: color, "stroke-width": 1.5, opacity: .45 }));
+    const lb = el("text", { x: L, y: y - 16, fill: color, "font-family": "var(--mono)", "font-size": 11,
+      "letter-spacing": "0.11em" });
+    lb.textContent = label;
+    svg.appendChild(lb);
+  };
+  track(yI, "var(--insee)", "REGISTRE INSEE");
+  track(yC, "var(--cadastre)", "CADASTRE OBSERVÉ");
+
+  // jalons INSEE
+  [
+    { d: "2016-01-01", n: "commune nouvelle\n6 communes" },
+    { d: "2019-01-01", n: "+3 communes\nabsorbées" },
+    { d: "2022-06-01", n: "communes déléguées\nsupprimées" }
+  ].forEach(m => {
+    svg.appendChild(el("circle", { cx: X(m.d), cy: yI, r: 5, fill: "var(--insee)" }));
+    m.n.split("\n").forEach((line, j) => {
+      const tx = el("text", { x: X(m.d), y: yI + 20 + j * 13, "text-anchor": "middle",
+        fill: "var(--ink-soft)", "font-family": "var(--mono)", "font-size": 10.5 });
+      tx.textContent = line;
+      svg.appendChild(tx);
+    });
+  });
+
+  // barre cadastre : 27198 présent en continu
+  const bar = (from, to, y, color, label, sub) => {
+    const w = X(to) - X(from);
+    svg.appendChild(el("rect", { x: X(from), y: y - 9, width: w, height: 18, fill: color, rx: 2, opacity: .9 }));
+    const tx = el("text", { x: X(from) + 7, y: y + 4, fill: "var(--ground)",
+      "font-family": "var(--mono)", "font-size": 11 });
+    tx.textContent = label;
+    svg.appendChild(tx);
+    if (sub) {
+      const s = el("text", { x: X(from) + w / 2, y: y + 30, "text-anchor": "middle",
+        fill: "var(--ink-soft)", "font-family": "var(--mono)", "font-size": 10.5 });
+      s.textContent = sub;
+      svg.appendChild(s);
+    }
+  };
+  bar("2018-04-03", "2026-06-01", yC, "var(--cadastre)", "27198 — 32 millésimes");
+  bar("2019-01-01", "2020-01-01", yC + 42, "var(--ecart)", "27297 · 27416 · 27491",
+      "5 millésimes après la fusion légale");
+})();
+</script>

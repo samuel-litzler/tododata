@@ -1,0 +1,170 @@
+@import 'tailwindcss';
+@import '@nuxt/ui';
+
+/* ============================================================================
+   Parti pris typographique : SOBRE.
+
+   Un site de cartographie se lit en diagonale, autour d'une carte qui occupe
+   l'écran. Le serif éditorial des rapports imprimés y crée du bruit : on passe
+   à une pile sans-serif système, à la manière de cartes.gouv.fr et data.gouv.fr.
+   Aucune fonte distante — pas de CDN, pas de FOUT, pas de dépendance réseau.
+
+   La hiérarchie ne repose plus sur un changement de famille mais sur le poids,
+   le corps et l'interlettrage. Le monospace reste partout où il y a un code
+   INSEE, une date ou une surface : ce sont des données tabulaires.
+   ============================================================================ */
+
+@theme static {
+  /* --- Couleurs sémantiques -------------------------------------------------
+     Une seule règle à ne pas trahir :
+       INSEE    = le registre administratif  → ocre
+       CADASTRE = la mesure du territoire    → turquoise
+       ÉCART    = vermillon, jamais décoratif
+     Les teintes sont désaturées par rapport aux rapports : à côté d'une carte
+     colorée, un accent trop vif entre en concurrence avec la donnée. */
+
+  --color-cadastre-50: #eff5f5;
+  --color-cadastre-100: #d9e8e8;
+  --color-cadastre-200: #b3d1d2;
+  --color-cadastre-300: #82b3b5;
+  --color-cadastre-400: #4f9295;
+  --color-cadastre-500: #1d6b6f;
+  --color-cadastre-600: #17575b;
+  --color-cadastre-700: #124649;
+  --color-cadastre-800: #0e3739;
+  --color-cadastre-900: #0a2a2b;
+  --color-cadastre-950: #06191a;
+
+  --color-insee-50: #faf6ec;
+  --color-insee-100: #f1e8cf;
+  --color-insee-200: #e2d0a0;
+  --color-insee-300: #cfae5d;
+  --color-insee-400: #b8933a;
+  --color-insee-500: #9a7a26;
+  --color-insee-600: #7e631e;
+  --color-insee-700: #644e18;
+  --color-insee-800: #4b3b12;
+  --color-insee-900: #35290d;
+  --color-insee-950: #201908;
+
+  --color-ecart-50: #fcf1ee;
+  --color-ecart-100: #f8ded7;
+  --color-ecart-200: #f0bcaf;
+  --color-ecart-300: #e08a72;
+  --color-ecart-400: #c9634a;
+  --color-ecart-500: #ac4227;
+  --color-ecart-600: #8e3620;
+  --color-ecart-700: #712b19;
+  --color-ecart-800: #562113;
+  --color-ecart-900: #3d180e;
+  --color-ecart-950: #240e08;
+
+  /* Neutres franchement neutres. Les gris légèrement teintés des rapports
+     donnaient un caractère « papier » qui se heurte à la carte. */
+  --color-ardoise-50: #fafafa;
+  --color-ardoise-100: #f3f4f5;
+  --color-ardoise-200: #e6e8ea;
+  --color-ardoise-300: #d2d6d9;
+  --color-ardoise-400: #9ba3a8;
+  --color-ardoise-500: #737c82;
+  --color-ardoise-600: #4d565c;
+  --color-ardoise-700: #333b40;
+  --color-ardoise-800: #21272b;
+  --color-ardoise-900: #15191c;
+  --color-ardoise-950: #0d1012;
+
+  /* Une seule famille de texte : la hiérarchie passe par le poids et le corps. */
+  --font-sans:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    ui-monospace, 'SF Mono', SFMono-Regular, 'Cascadia Mono', Menlo, Consolas, monospace;
+
+  --ui-color-primary-50: var(--color-cadastre-50);
+  --ui-color-primary-100: var(--color-cadastre-100);
+  --ui-color-primary-200: var(--color-cadastre-200);
+  --ui-color-primary-300: var(--color-cadastre-300);
+  --ui-color-primary-400: var(--color-cadastre-400);
+  --ui-color-primary-500: var(--color-cadastre-500);
+  --ui-color-primary-600: var(--color-cadastre-600);
+  --ui-color-primary-700: var(--color-cadastre-700);
+  --ui-color-primary-800: var(--color-cadastre-800);
+  --ui-color-primary-900: var(--color-cadastre-900);
+  --ui-color-primary-950: var(--color-cadastre-950);
+}
+
+:root {
+  --ui-primary: var(--color-cadastre-500);
+  --ui-bg: #ffffff;
+  --ui-bg-elevated: var(--color-ardoise-50);
+  --ui-border: var(--color-ardoise-300);
+  --ui-text: var(--color-ardoise-900);
+  --ui-text-muted: var(--color-ardoise-600);
+  --ui-text-dimmed: var(--color-ardoise-500);
+  /* Fond de plan de la carte : gris très clair, pour que les polygones
+     colorés ressortent sans que le fond attire l'œil. */
+  --plan: #eef0f1;
+}
+
+.dark {
+  --ui-primary: var(--color-cadastre-400);
+  --ui-bg: var(--color-ardoise-950);
+  --ui-bg-elevated: var(--color-ardoise-900);
+  --ui-border: var(--color-ardoise-700);
+  --ui-text: #eceeef;
+  --ui-text-muted: var(--color-ardoise-400);
+  --ui-text-dimmed: var(--color-ardoise-500);
+  --plan: #101315;
+}
+
+body {
+  background: var(--ui-bg);
+  color: var(--ui-text);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Titres : du poids et un interlettrage resserré, pas de changement de famille.
+   C'est ce qui distingue une interface sobre d'une page éditoriale. */
+h1,
+h2,
+h3 {
+  font-weight: 650;
+  letter-spacing: -0.018em;
+  text-wrap: balance;
+}
+h1 {
+  letter-spacing: -0.025em;
+}
+
+/* Conservé sous le même nom pour ne pas toucher aux composants : ce n'est plus
+   un serif, juste le traitement des titres. */
+.font-display {
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+/* Les chiffres alignés en colonne doivent l'être réellement. */
+.tabular,
+table td,
+table th,
+.font-mono {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Petit label en capitales qui ouvre chaque section. Plus discret qu'avant :
+   moins d'interlettrage, moins de contraste. */
+.eyebrow {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ui-text-dimmed);
+}
+
+/* Liens : soulignement à l'ancienne, décalé, plutôt qu'un survol coloré. */
+a:not([class]) {
+  color: inherit;
+  text-decoration-color: var(--color-cadastre-400);
+  text-underline-offset: 3px;
+}
