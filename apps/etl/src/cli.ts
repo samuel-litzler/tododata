@@ -10,6 +10,11 @@
  *   pnpm etl parcelles:france [n] [deps...]  ingère tous les départements, n en parallèle
  *   pnpm etl parcelles:synthese [dep]        reconstruit fiches et événements (à faire après)
  *   pnpm etl parcelles:rapport [dep]         restitue les contrôles du pipeline parcelles
+ *   pnpm etl dvf:migrer                      pose le modèle DVF (à faire avant)
+ *   pnpm etl dvf <livraison> [dep]           distille une livraison, ex : dvf 202504
+ *   pnpm etl dvf:historique [dep]            distille les onze livraisons, dans l'ordre
+ *   pnpm etl dvf:synthese                    reconstruit mutations et événements
+ *   pnpm etl dvf:rapport                     restitue les contrôles du pipeline DVF
  *
  * Chaque commande est idempotente : la relancer ne doit rien casser.
  */
@@ -20,6 +25,9 @@ import { migrerParcelles, synthetiserParcelles } from './pipelines/parcelles/ste
 import { ingererParcelles } from './pipelines/parcelles/steps/10-ingerer.js'
 import { ingererFrance } from './pipelines/parcelles/steps/11-france.js'
 import { rapportParcelles } from './pipelines/parcelles/steps/20-rapport.js'
+import { migrerDvf, synthetiserDvf } from './pipelines/dvf/steps/30-migrer.js'
+import { ingererLivraison, ingererHistorique } from './pipelines/dvf/steps/31-ingerer.js'
+import { rapportDvf } from './pipelines/dvf/steps/32-rapport.js'
 import { logger } from './_shared/observability/logger.js'
 import { fermer } from './_shared/db/pgClient.js'
 
@@ -84,6 +92,32 @@ async function main() {
 
     case 'parcelles:rapport':
       await rapportParcelles(args[0])
+      break
+
+    case 'dvf:migrer':
+      await migrerDvf()
+      break
+
+    case 'dvf': {
+      const pub = args[0]
+      if (!pub || !/^\d{6}$/.test(pub)) throw new Error('usage : dvf <livraison>, ex : dvf 202504')
+      await ingererLivraison(pub, { departement: args[1], forcer: args.includes('--forcer') })
+      break
+    }
+
+    case 'dvf:historique':
+      await ingererHistorique({
+        departement: args.find((a) => /^[0-9AB]{2,3}$/i.test(a))?.toUpperCase(),
+        forcer: args.includes('--forcer'),
+      })
+      break
+
+    case 'dvf:synthese':
+      await synthetiserDvf()
+      break
+
+    case 'dvf:rapport':
+      await rapportDvf()
       break
 
     default:

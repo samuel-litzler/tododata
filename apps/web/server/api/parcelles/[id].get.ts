@@ -218,12 +218,66 @@ export default defineEventHandler(async (event) => {
     [codesCommunes],
   )
 
+  // --- Les mutations ------------------------------------------------------
+  // dvf.vente et non dvf.mutation_parcelle : c'est le grain stable. L'identifiant
+  // de mutation étant dérivé du contenu, toute recomposition en ouvre un nouveau
+  // — 11,3 % des ventes en ont porté deux — et la fiche verrait des ventes
+  // disparaître puis revenir sans que rien n'ait bougé.
+  //
+  // `avec_lots` est remonté tel quel parce qu'il change le SENS de la vente :
+  // quand un appartement se vend, la parcelle appartient à la copropriété et ne
+  // change pas de main. Mesuré en croisant avec le fichier des personnes morales,
+  // un changement de propriétaire accompagne 83 % des ventes hors lots contre
+  // 18,6 % des ventes de lots. La page doit pouvoir le dire.
+  // Les `numeric` et les `bigint` sont rendus en CHAÎNES par le pilote — c'est
+  // le seul moyen de ne pas perdre de précision sur des types que JavaScript ne
+  // sait pas représenter. Ici les montants tiennent tous dans un double, et le
+  // type de retour annonce `number` : on convertit à la frontière plutôt que de
+  // laisser une chaîne se promener. Sans cette conversion, la médiane d'un
+  // nombre pair de prix concatène au lieu d'additionner et rend NaN.
+  const ventes = await q(
+    `SELECT to_char(date_mutation,'YYYY-MM-DD') AS date_mutation,
+            nature, avec_lots, types,
+            valeur::float8          AS valeur,
+            surface_bati::float8    AS surface_bati,
+            surface_terrain::float8 AS surface_terrain,
+            n_prix::int             AS n_prix,
+            retard_jours,
+            to_char(vu_debut,'YYYY-MM-DD') AS vu_debut
+       FROM dvf.vente WHERE id_parcelle = $1 ORDER BY date_mutation`,
+    [id],
+  )
+
+  // Les ventes des parcelles dont celle-ci hérite du sol. Une parcelle née d'une
+  // division n'a jamais été vendue elle-même, mais son terrain l'a été sous un
+  // autre numéro — et c'est souvent le seul prix qu'on puisse lui rattacher.
+  //
+  // Une seule génération, volontairement : chaque saut supplémentaire dilue le
+  // lien. `part` dit ce qu'on a hérité, pour qu'un prix venu d'un prédécesseur
+  // dont on ne tient que 4 % ne se lise pas comme un prix de la parcelle.
+  const ventesHeritees = ventes.length
+    ? []
+    : await q(
+        `SELECT to_char(v.date_mutation,'YYYY-MM-DD') AS date_mutation,
+                v.nature, v.avec_lots, v.types,
+                v.valeur::float8          AS valeur,
+                v.surface_terrain::float8 AS surface_terrain,
+                f.id_avant AS herite_de, f.type AS filiation, f.part_apres AS part
+           FROM parc.filiation f
+           JOIN dvf.vente v ON v.id_parcelle = f.id_avant
+          WHERE f.id_apres = $1
+          ORDER BY v.date_mutation DESC LIMIT 12`,
+        [id],
+      )
+
   setHeader(event, 'Cache-Control', 'public, max-age=300')
 
   return {
     parcelle,
     versions,
     evenements,
+    ventes,
+    ventesHeritees,
     liens,
     noeuds,
     commune: commune?.nom ?? null,

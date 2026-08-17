@@ -52,6 +52,29 @@ interface Reponse {
     vu_fin: string | null
   }[]
   evenements: { millesime: string; type: string; detail: string[] | null }[]
+  ventes: {
+    date_mutation: string
+    nature: string
+    valeur: number | null
+    avec_lots: boolean
+    types: string[]
+    surface_bati: number | null
+    surface_terrain: number | null
+    n_prix: number
+    retard_jours: number
+    vu_debut: string
+  }[]
+  ventesHeritees: {
+    date_mutation: string
+    nature: string
+    valeur: number | null
+    avec_lots: boolean
+    types: string[]
+    surface_terrain: number | null
+    herite_de: string
+    filiation: string
+    part: number | null
+  }[]
   liens: {
     id_avant: string
     id_apres: string
@@ -240,6 +263,168 @@ const chaineIdentite = computed(() => {
  * tout. L'écart mesure donc ce que la reconstitution laisse échapper — un
  * successeur non détecté, ou un recouvrement sous le seuil de 5%.
  */
+/**
+ * Montants à l'échelle qui se lit d'un coup d'œil.
+ *
+ * `maximumFractionDigits` sans `minimum` laisse tomber les décimales nulles :
+ * 2 000 000 donne « 2 M€ » et non « 2,00 M€ ». Une colonne de montants où la
+ * moitié des lignes traînent des zéros se lit deux fois moins vite.
+ */
+const euros = (v: number | null) => {
+  if (v == null) return '—'
+  const fr = (x: number, d: number) => x.toLocaleString('fr-FR', { maximumFractionDigits: d })
+  if (Math.abs(v) >= 1_000_000) return `${fr(v / 1_000_000, 2)} M€`
+  if (Math.abs(v) >= 1_000) return `${fr(v / 1_000, 1)} k€`
+  return `${fr(v, 0)} €`
+}
+
+/**
+ * Le prix au mètre carré reste en euros pleins.
+ *
+ * Il vit dans les centaines à quelques milliers : « 1,2 k€ » s'y lit moins bien
+ * que « 1 200 € », alors que l'inverse est vrai pour le prix d'un bien. L'échelle
+ * suit la grandeur, elle ne s'applique pas uniformément.
+ */
+const euroM2 = (v: number | null) =>
+  v == null ? '—' : `${Math.round(v).toLocaleString('fr-FR')} €`
+
+const mediane = (xs: number[]) => {
+  if (!xs.length) return null
+  const t = [...xs].sort((a, b) => a - b)
+  const m = Math.floor(t.length / 2)
+  return t.length % 2 ? t[m]! : (t[m - 1]! + t[m]!) / 2
+}
+
+/**
+ * Les ventes regroupées par ce sur quoi elles portent.
+ *
+ * Une parcelle de copropriété porte jusqu'à 194 ventes dans le département :
+ * les lister à plat ne raconte rien. Regroupées par nature de bien, elles
+ * deviennent lisibles — et surtout comparables entre elles, ce qui est le seul
+ * moyen de voir une évolution.
+ *
+ * Le regroupement se fait sur la composition du bien (« Appartement »,
+ * « Appartement + Dépendance », « Terrain seul »), pas sur la nature juridique
+ * de l'acte : c'est ce qui se vend qui détermine le prix, pas la forme du
+ * contrat.
+ */
+/**
+ * Ce sur quoi porte la vente, nommé honnêtement.
+ *
+ * DVF ne renseigne `type_local` que pour un local qui EXISTE. Une vente en
+ * l'état futur d'achèvement porte donc des lots sans aucun type — et l'appeler
+ * « terrain seul » serait faux : c'est un logement vendu sur plan, pas un
+ * terrain. La présence de lots tranche.
+ */
+const libelleBien = (types: string[], avecLots: boolean) =>
+  types.length
+    ? [...types].sort().join(' + ')
+    : avecLots
+      ? 'Lot vendu sans local décrit'
+      : 'Terrain seul'
+
+const ventesParType = computed(() => {
+  const v = data.value?.ventes ?? []
+  // En dessous d'une poignée de ventes, la liste brute se lit mieux qu'un
+  // regroupement qui ferait des groupes d'un élément.
+  if (v.length < 5) return []
+
+  const paquets = new Map<string, typeof v>()
+  for (const x of v) {
+    const cle = libelleBien(x.types, x.avec_lots)
+    const p = paquets.get(cle)
+    if (p) p.push(x)
+    else paquets.set(cle, [x])
+  }
+
+  return [...paquets.entries()]
+    .map(([libelle, ventes]) => {
+      const prix = ventes.map((x) => x.valeur).filter((x): x is number => x != null)
+
+      // Prix au mètre carré : seulement quand la surface bâtie est connue et non
+      // nulle. Sur un lot de copropriété, la valeur foncière porte sur la MUTATION
+      // entière — un appartement vendu avec sa cave et son garage compte une seule
+      // fois. C'est donc bien le prix du bien, pas celui du seul appartement.
+      const auM2 = ventes
+        .filter((x) => x.valeur != null && x.surface_bati && x.surface_bati > 0)
+        .map((x) => x.valeur! / x.surface_bati!)
+
+      // Médiane annuelle : la moyenne serait emportée par une vente atypique, et
+      // sur cinq ou dix ventes par an c'est vite arrivé.
+      const parAnnee = new Map<number, number[]>()
+      for (const x of ventes) {
+        if (x.valeur == null) continue
+        const a = Number(x.date_mutation.slice(0, 4))
+        const l = parAnnee.get(a)
+        if (l) l.push(x.valeur)
+        else parAnnee.set(a, [x.valeur])
+      }
+      const serie = [...parAnnee.entries()]
+        .map(([annee, xs]) => ({ annee, valeur: mediane(xs)!, n: xs.length }))
+        .sort((a, b) => a.annee - b.annee)
+
+      return {
+        libelle,
+        avecLots: ventes.some((x) => x.avec_lots),
+        n: ventes.length,
+        de: ventes[0]!.date_mutation,
+        a: ventes[ventes.length - 1]!.date_mutation,
+        medianePrix: mediane(prix),
+        medianeM2: mediane(auM2),
+        serie,
+        courbe: courbeDe(serie.map((s) => s.valeur)),
+      }
+    })
+    .sort((a, b) => b.n - a.n)
+})
+
+/**
+ * Tracé d'une série, dans le même langage visuel que la frise communale.
+ *
+ * L'échelle verticale est bornée aux valeurs observées et NON à zéro : sur des
+ * prix médians qui varient de quelques pour cent d'une année à l'autre, partir
+ * de zéro donnerait une ligne rigoureusement plate. L'amplitude réelle est donc
+ * montrée, et écrite en toutes lettres sous la courbe.
+ */
+function courbeDe(vals: number[]) {
+  if (vals.length < 3) return null
+  const min = Math.min(...vals)
+  const max = Math.max(...vals)
+  const etendue = max - min || 1
+  const pts = vals.map((v, i) => ({
+    x: (i / (vals.length - 1)) * 100,
+    y: 100 - ((v - min) / etendue) * 92 - 4,
+  }))
+  const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(' ')
+  return { d, aire: `${d} L100,100 L0,100 Z`, min, max, pts }
+}
+
+/**
+ * Ce qu'une vente dit — et surtout ce qu'elle ne dit pas.
+ *
+ * Une vente « avec lots » porte sur des lots de copropriété : la PARCELLE
+ * appartient au syndicat et ne change pas de main. Croisé avec le fichier des
+ * personnes morales sur sept ans, un changement de propriétaire accompagne 83 %
+ * des ventes hors lots contre 18,6 % des ventes de lots. Afficher les deux de la
+ * même façon laisserait croire à un changement de main quatre fois sur cinq à
+ * tort.
+ */
+const portee = (v: { avec_lots: boolean }) =>
+  v.avec_lots
+    ? 'Vente de lots — la parcelle appartient à la copropriété et ne change pas de main'
+    : 'Vente portant sur le terrain lui-même'
+
+/**
+ * Le retard de déclaration, en clair. Une vente met environ dix mois à
+ * apparaître dans DVF (médiane mesurée), une sur dix plus de dix-huit. Ce n'est
+ * pas un détail technique : c'est la borne de fraîcheur de tout ce que la fiche
+ * affirme.
+ */
+const retard = (jours: number) => {
+  const mois = Math.round(jours / 30.4)
+  return mois < 1 ? 'déclarée le mois même' : `déclarée ${mois} mois plus tard`
+}
+
 const bilan = computed(() => {
   const d = data.value
   if (!d || !descendants.value.length) return null
@@ -457,6 +642,161 @@ const bilan = computed(() => {
             <UBadge v-if="c.courant" size="sm" color="primary" variant="subtle">code actuel</UBadge>
           </li>
         </ol>
+      </section>
+
+      <!-- Mutations -->
+      <section v-if="data.ventes.length || data.ventesHeritees.length" class="mb-10">
+        <h2 class="mb-1 text-2xl font-semibold tracking-tight">Quand elle a changé de main</h2>
+        <p class="mb-4 text-sm text-muted">
+          Demandes de valeurs foncières, reconstituées depuis onze livraisons successives
+          de la DGFiP. Une vente met environ dix mois à y apparaître, et l’année la plus
+          récente n’est complète qu’aux trois quarts.
+        </p>
+
+        <!-- Vue regroupée : au-delà de quelques ventes, la liste à plat ne
+             raconte rien. Une parcelle de copropriété en porte jusqu'à 194. -->
+        <div v-if="ventesParType.length" class="mb-6 grid gap-4 sm:grid-cols-2">
+          <div
+            v-for="g in ventesParType"
+            :key="g.libelle"
+            class="rounded-lg border border-default px-5 py-4"
+          >
+            <div class="flex flex-wrap items-baseline gap-x-3">
+              <h3 class="text-base font-semibold">{{ g.libelle }}</h3>
+              <span class="font-mono text-xs text-dimmed tabular-nums">
+                {{ g.n }} vente{{ g.n > 1 ? 's' : '' }}
+              </span>
+              <UBadge v-if="g.avecLots" size="sm" color="warning" variant="subtle">lots</UBadge>
+            </div>
+
+            <dl class="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+              <div class="flex items-baseline justify-between gap-2">
+                <dt class="text-muted">médiane</dt>
+                <dd class="font-mono font-semibold tabular-nums">{{ euros(g.medianePrix) }}</dd>
+              </div>
+              <div v-if="g.medianeM2" class="flex items-baseline justify-between gap-2">
+                <dt class="text-muted">au m²</dt>
+                <dd class="font-mono font-semibold tabular-nums">{{ euroM2(g.medianeM2) }}</dd>
+              </div>
+            </dl>
+
+            <div v-if="g.courbe" class="relative mt-3">
+              <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                class="h-12 w-full"
+                role="img"
+                :aria-label="`Prix médian par an, de ${euros(g.courbe.min)} à ${euros(g.courbe.max)}`"
+              >
+                <path :d="g.courbe.aire" fill="var(--color-cadastre-500)" opacity="0.12" />
+                <path
+                  :d="g.courbe.d"
+                  fill="none"
+                  stroke="var(--color-cadastre-500)"
+                  stroke-width="1.5"
+                  vector-effect="non-scaling-stroke"
+                />
+              </svg>
+              <div class="mt-0.5 flex justify-between font-mono text-[0.65rem] text-dimmed">
+                <span>{{ g.serie[0]?.annee }}</span>
+                <span class="text-muted">
+                  prix médian par an · {{ euros(g.courbe.min) }} → {{ euros(g.courbe.max) }}
+                </span>
+                <span>{{ g.serie[g.serie.length - 1]?.annee }}</span>
+              </div>
+            </div>
+
+            <!-- Moins de trois années renseignées : il n'y a pas d'évolution à
+                 tracer, et une courbe de deux points en suggérerait une. -->
+            <p v-else class="mt-3 text-xs text-dimmed">
+              {{ g.serie.length }} année{{ g.serie.length > 1 ? 's' : '' }} renseignée{{ g.serie.length > 1 ? 's' : '' }} —
+              trop peu pour une évolution
+            </p>
+          </div>
+        </div>
+
+        <details v-if="ventesParType.length" class="rounded-lg border border-default">
+          <summary class="cursor-pointer px-5 py-3 text-sm text-muted hover:text-default">
+            Le détail des {{ data.ventes.length }} ventes
+          </summary>
+          <ul class="border-t border-default">
+            <li
+              v-for="(v, i) in data.ventes"
+              :key="v.date_mutation + v.nature + i"
+              class="flex flex-wrap items-baseline gap-x-4 gap-y-1 border-default px-5 py-2 text-sm"
+              :class="i > 0 && 'border-t'"
+            >
+              <span class="font-mono text-xs tabular-nums text-dimmed">{{ v.date_mutation }}</span>
+              <span>{{ libelleBien(v.types, v.avec_lots) }}</span>
+              <span v-if="v.surface_bati" class="text-xs text-dimmed">{{ surface(v.surface_bati) }}</span>
+              <span class="ml-auto font-mono font-semibold tabular-nums">{{ euros(v.valeur) }}</span>
+            </li>
+          </ul>
+        </details>
+
+        <ul v-else-if="data.ventes.length" class="rounded-lg border border-default">
+          <li
+            v-for="(v, i) in data.ventes"
+            :key="v.date_mutation + v.nature"
+            class="border-default px-5 py-4"
+            :class="i > 0 && 'border-t'"
+          >
+            <div class="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+              <span class="font-mono text-sm tabular-nums">{{ dateLisible(v.date_mutation) }}</span>
+              <span class="text-sm font-medium">{{ v.nature }}</span>
+              <span class="ml-auto font-mono text-base font-semibold tabular-nums">
+                {{ euros(v.valeur) }}
+              </span>
+            </div>
+
+            <p class="mt-1 text-sm" :class="v.avec_lots ? 'text-warning' : 'text-muted'">
+              {{ portee(v) }}
+            </p>
+
+            <p class="mt-1 text-xs text-dimmed">
+              {{ libelleBien(v.types, v.avec_lots) }} ·
+              <template v-if="v.surface_bati">{{ surface(v.surface_bati) }} bâtis · </template>
+              <template v-if="v.surface_terrain">{{ surface(v.surface_terrain) }} de terrain · </template>
+              {{ retard(v.retard_jours) }}
+            </p>
+
+            <!-- Deux actes du même jour sur la même parcelle, tous deux en
+                 disposition 000001 : rien dans l'open data ne les sépare. On le
+                 dit plutôt que d'afficher un prix qui n'est celui d'aucun des deux. -->
+            <p v-if="v.n_prix > 1" class="mt-1 text-xs text-warning">
+              {{ v.n_prix }} prix distincts sous la même référence — deux ventes du même
+              jour sur cette parcelle, que la source ne permet pas de départager.
+            </p>
+          </li>
+        </ul>
+
+        <div v-else class="rounded-lg border border-default px-5 py-4">
+          <p class="text-sm text-muted">
+            Aucune vente à son nom. Son terrain, lui, a changé de main sous un autre
+            numéro&nbsp;:
+          </p>
+          <ul class="mt-3 space-y-2">
+            <li
+              v-for="v in data.ventesHeritees"
+              :key="v.herite_de + v.date_mutation"
+              class="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm"
+            >
+              <span class="font-mono text-xs tabular-nums text-dimmed">
+                {{ dateLisible(v.date_mutation) }}
+              </span>
+              <NuxtLink :to="`/parcelle/${v.herite_de}`" class="font-mono text-xs hover:underline">
+                {{ v.herite_de }}
+              </NuxtLink>
+              <span class="text-muted">{{ v.nature }}</span>
+              <span class="font-mono tabular-nums">{{ euros(v.valeur) }}</span>
+              <!-- La part héritée conditionne tout : un prix venu d'un prédécesseur
+                   dont on ne tient que quelques pour cent ne dit rien de cette parcelle. -->
+              <span v-if="v.part != null" class="text-xs text-dimmed">
+                {{ v.filiation }} · {{ Math.round(v.part * 100) }} % de ce terrain vient de là
+              </span>
+            </li>
+          </ul>
+        </div>
       </section>
 
       <!-- Chronologie -->

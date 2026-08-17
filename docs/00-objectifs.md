@@ -489,3 +489,251 @@ Résultats du run complet sur les 32 relevés (1 565 026 parcelles au dernier) :
   passage à l'échelle demandera de vérifier le comportement des jointures au-delà de
   quelques dizaines de millions de lignes.
 
+## 10. DVF : l'historique des mutations
+
+Le cadastre dit ce qu'est une parcelle ; DVF dit qu'elle a changé de main, quand, et
+pour combien. Les deux jeux partagent le même identifiant à 14 caractères, ce qui rend
+la jointure directe — mais DVF pose trois problèmes que le cadastre ne posait pas.
+
+### 10.1 DVF n'est pas un jeu de données, c'est une suite de livraisons
+
+`files.data.gouv.fr/geo-dvf/latest` ne sert qu'une fenêtre glissante de cinq ans.
+L'historique complet est ailleurs : le miroir <https://data.cquest.org/dgfip_dvf/>
+conserve les **onze livraisons successives** de la DGFiP, d'avril 2019 à avril 2025.
+
+    livraison  années couvertes            emballage
+    201904     2014 … 2018                 .txt
+    201910     2014 … 2019                 .txt.gz
+    202004     2015 … 2019
+    202010     2015-s2 … 2020
+    202104     2016 … 2020
+    202110     2016-s2 … 2021-s1           .txt (non compressé)
+    202204     2017 … 2021
+    202304     2018 … 2022
+    202404     2019 … 2023
+    202410     2019-s2 … 2024-s1           .txt.zip
+    202504     2020 … 2024
+
+C'est une fenêtre de cinq ans **republiée deux fois par an** : en avril les années
+pleines, en octobre le semestre courant en plus. Une même année est donc livrée
+jusqu'à six fois. L'emballage change trois fois en six ans — d'où la lecture de
+l'extension à l'exécution, jamais une déduction depuis l'année.
+
+*Piège* : la livraison 202110 contient **à la fois** `2016-s2` et `2016` complet.
+Charger les deux dupliquerait tout le second semestre et fausserait le rang
+d'occurrence qui départage les doublons légitimes. L'année pleine prime.
+
+Contrairement aux fichiers des personnes morales, le format est stable : UTF-8 et
+43 colonnes sur les onze livraisons, en-tête identique de 2014 à 2024.
+
+### 10.2 Les années passées sont révisées — mais aucune vente n'est retirée
+
+Mesuré sur le seul département 01 :
+
+    année    201904   201910   202004   202010   202104   202110
+    2014     27 610   27 613        —        —        —        —
+    2017     35 915   35 961   35 982   36 021   36 033   36 034
+    2018     21 295   32 911   37 919   37 883   38 130   38 131
+
+2017 gagne des lignes à chaque livraison pendant six ans : les actes sont enregistrés
+avec retard. Et **2018 perd 36 lignes entre avril et octobre 2020**.
+
+Cette baisse a d'abord été lue comme une suppression de ventes. Vérification faite,
+c'est faux, et l'écart est instructif :
+
+    couples (date de mutation, parcelle) observés   320 763
+    encore déclarés au dernier état                 320 763
+    disparus                                              0
+
+**Aucune vente n'est jamais retirée de DVF.** Les lignes perdues sont des lignes de
+terrain (`type_local` vide) : le découpage d'une parcelle par nature de culture est
+recomposé, plusieurs lignes deviennent une, la vente elle-même reste déclarée. C'est
+une correction de composition, pas une annulation.
+
+La leçon de méthode est plus utile que le chiffre : un total qui baisse ne dit pas
+*ce* qui a baissé. Il fallait descendre au grain (date, parcelle) pour voir que
+l'objet « vente » est intact. La DGFiP corrige beaucoup et ne supprime rien.
+
+C'est ce qui justifie l'historisation. On applique le même SCD2 que pour les
+parcelles, avec une différence de fond : ici **l'égalité stricte est légitime**. DVF
+ne contient que des valeurs textuelles recopiées d'un acte, sans le bruit de
+recalcul en virgule flottante qui produisait 98 % de fausses modifications sur les
+géométries.
+
+Une précaution en revanche est propre à DVF : **l'absence n'est pas une suppression**.
+Quand 2014 sort de la fenêtre en 2020, elle disparaît des livraisons sans que rien
+n'ait été retiré. Une livraison ne peut infirmer que les lignes dont la date tombe
+dans *sa* couverture — bornes mesurées sur les données, jamais déduites du nom des
+fichiers.
+
+### 10.3 La mutation doit être reconstruite, et on peut mesurer à quel point
+
+Le champ qui identifierait l'acte (`Reference document`) est **blanchi** dans l'open
+data, de même que `Code service CH`. Il ne reste que ceci : les lignes d'une même
+mutation sont consécutives dans le fichier et partagent date et valeur foncière.
+
+La règle retenue — contiguïté sur `(date de mutation, valeur foncière)`, rupture
+forcée au changement de département — a été validée contre geo-dvf, qui publie le
+découpage d'Etalab. Sur la commune 01053, année 2021, 1 143 triplets appariés :
+
+    994 blocs bruts  ↔  996 mutations Etalab
+      4 blocs recouvrant deux mutations   (la règle fusionne à tort)
+      2 mutations éclatées en deux blocs  (la règle scinde à tort)
+
+Soit **99,4 % d'accord**. Le résidu est irréductible : deux ventes le même jour, au
+même prix, dans la même commune, que rien dans l'open data ne sépare. Etalab ne fait
+pas mieux — il tranche autrement.
+
+*Conséquence de modèle* : l'`id_mutation` d'Etalab (« 2021-1000 ») est un **rang
+séquentiel national**. Il se décale à chaque republication dès qu'une ligne bouge
+n'importe où en France, et ne peut donc pas servir de clé à un historique. Le nôtre
+est dérivé du contenu — jour, plus petite parcelle concernée, empreinte du prix — et
+rafraîchi en place plutôt qu'inclus dans l'empreinte, pour qu'une mutation gagnant une
+parcelle ne fasse pas rouvrir toutes ses lignes intactes.
+
+### 10.4 Deux bugs silencieux, encore
+
+- Le filtre départemental était recollé en `$19 == "01" && { … }`, **erreur de syntaxe
+  awk**. Le tube sortait sans rien écrire.
+- L'écouteur `close` du processus fils était branché **après** l'attente du tube. Un
+  shell qui échoue se termine avant que le tube ne se dénoue : l'événement était déjà
+  passé et le process restait suspendu, sans erreur et sans fin.
+
+Aucun des deux ne signalait quoi que ce soit. On vérifie désormais qu'une livraison a
+effectivement chargé des lignes avant de la distiller — un shell peut sortir en 0 sans
+avoir rien produit.
+
+### 10.5 Ce que l'historisation révèle — département 01, onze livraisons
+
+2 106 965 lignes livrées au total, **516 900 versions stockées** : le SCD2 divise le
+volume par 4,1 sans rien perdre. 434 496 lignes sont encore en vigueur, 82 404 ont été
+fermées. 173 434 mutations, 359 931 couples (acte, parcelle), 243 368 parcelles.
+
+**Une année de DVF met trois ans à être complète.**
+
+    livraison   délai après     % du total    pire
+                fin d'année     atteint       cas
+    1re          3 mois            72,8 %     55,8 %
+    2e          11 mois            96,2 %     86,3 %
+    3e          18 mois            99,5 %     99,2 %
+    6e           3 ans            100,0 %     99,9 %
+
+(années 2018 et suivantes ; 2014-2017 sont exclues, toutes publiées d'un coup en
+avril 2019 et donc sans premier délai significatif.)
+
+Autrement dit : **le DVF de l'année N-1 publié en avril de l'année N ne contient qu'un
+peu plus des deux tiers des transactions qui y figureront à terme**, et jusqu'à 44 %
+lui manquent dans le pire cas observé. Toute statistique construite sur la dernière
+année publiée est structurellement fausse — et c'est invisible pour qui ne dispose que
+d'une livraison.
+
+**Le churn est massif, et invisible dans les totaux.**
+
+Au niveau de l'année, une seule baisse nette en onze livraisons : 2018 perd 36 lignes
+en octobre 2020. Au niveau de la ligne, la même période compte des dizaines de milliers
+de mouvements qui se compensent :
+
+    82 404 fermetures
+      73 904 corrections            (une ligne de même ancre la remplace)
+       8 500 lignes de terrain retirées, sans remplaçant de même ancre
+
+Les 8 500 sont **toutes** des lignes sans `type_local`, et dans les 8 500 cas la vente
+correspondante reste déclarée : c'est le découpage du terrain par nature de culture qui
+est recomposé, jamais l'acte. Elles se concentrent sur 2017-2022, avec un maximum en
+2019 (1 906) ; 2014 à 2016 n'en comptent aucune, ces années étant déjà stabilisées
+lorsqu'on a commencé à les observer.
+
+C'est la justification empirique de l'ancre plus grossière que l'empreinte : sans elle,
+ces 82 404 fermetures seraient un bloc indistinct. Mais l'ancre ne suffit pas à
+conclure — elle porte `(date, parcelle, disposition, type de local)`, si bien que le
+retrait d'une composante ressemble au retrait d'une vente. Il faut remonter au grain
+(date, parcelle) pour trancher, et c'est ce qui a corrigé une première lecture erronée
+de ces 8 500 lignes.
+
+### 10.6 Ventes avec et sans lots
+
+    Vente                                hors lots   108 882   médiane 141 650 €
+    Vente                                avec lots    36 263   médiane 140 000 €
+    Vente en l'état futur d'achèvement   avec lots     8 599   médiane 273 000 €
+    Vente en l'état futur d'achèvement   hors lots     1 037   médiane 370 000 €
+    Echange                              hors lots     1 755   médiane   1 000 €
+    Vente terrain à bâtir                hors lots       596   médiane  83 600 €
+
+La distinction n'est pas de nomenclature. Croisé avec le fichier des personnes morales
+sur Bourg-en-Bresse, en restreignant aux parcelles **effectivement détenues par une
+personne morale l'année de la vente** — sans quoi on compte au dénominateur toutes les
+ventes entre particuliers, que ce fichier ne peut par construction jamais refléter :
+
+    vente hors lots              829 ventes   688 avec changement   83,0 %
+    vente de lots (copropriété)  559 ventes   104 avec changement   18,6 %
+
+Quand un appartement se vend, la PARCELLE appartient à la copropriété et ne change pas
+de main. Annoncer une vente de lots comme un changement de propriétaire serait faux
+quatre fois sur cinq.
+
+Mesuré sur 2018-2024, sept ans. La même mesure sur la seule fenêtre 2021-2024 donnait
+78,4 % contre 23,7 % : l'accord se renforce avec la profondeur d'historique, ce qui est
+attendu — les années récentes sont les moins complètes des deux côtés.
+
+### 10.7 `dvf.vente` — le grain stable, seule surface de jointure au cadastre
+
+`dvf.mutation_parcelle` ne peut pas porter le rattachement, et la mesure le montre :
+l'`id_mutation` dérivant du contenu, toute recomposition ferme l'ancienne clé et en
+ouvre une neuve. **36 583 ventes sur 322 816 (11,3 %) ont porté deux identifiants
+d'acte successifs.** Bâtir le rattachement dessus ferait disparaître puis réapparaître
+des ventes qui n'ont jamais bougé.
+
+Le grain a donc été choisi sur mesure, entre trois candidats :
+
+    (date, parcelle)                0 disparition · fusionne 3 274 ventes distinctes
+    (date, parcelle, prix)          34 316 disparitions (9,5 %) — le prix est corrigé
+    (date, parcelle, disposition)   0 disparition · fusionne 2 318 ventes distinctes
+
+Le troisième l'emporte : **0 disparition sur 322 816**, et il vient de la source au
+lieu d'être dérivé. Sa limite est connue et bornée — deux actes du même jour sur la
+même parcelle portent tous deux la disposition 000001. On ne masque pas ce cas, la
+colonne `n_prix` le signale ligne à ligne. Le prix reste un attribut versionné, pas
+une clé.
+
+`vu_fin` y vaut NULL partout, par construction. La colonne est conservée pour que la
+propriété reste VÉRIFIABLE plutôt que supposée : si elle se met un jour à se remplir,
+c'est que la DGFiP a changé de pratique.
+
+### 10.8 Le retard de déclaration
+
+Écart entre la date de vente et sa première apparition dans une livraison :
+
+    année   ventes   moyenne   médiane   9e décile
+    2018    29 825    374 j     396 j      529 j
+    2019    32 519    316 j     309 j      449 j
+    2020    30 577    283 j     280 j      399 j
+    2021    37 871    357 j     295 j      556 j
+    2022    34 961    380 j     376 j      532 j
+    2023    30 867    286 j     285 j      416 j
+    2024    27 318    180 j     179 j      257 j   ← tronqué
+
+**Une vente met environ dix mois à apparaître dans DVF, et une sur dix met plus de
+dix-huit mois.** 2024 fait exception pour une raison de méthode et non de fond : on ne
+voit que les ventes déjà arrivées, les retardataires manquent au calcul. Le chiffre de
+l'année en cours est toujours flatteur.
+
+Combiné au 72,8 % de complétude à la première publication, cela donne le compte rendu
+honnête de la fraîcheur de DVF — et c'est exactement ce qu'un client qui veut « être à
+jour » a besoin de savoir avant de bâtir quoi que ce soit dessus.
+
+### 10.9 Ce qui reste ouvert
+
+- Le rattachement DVF ↔ cadastre au-delà de la commune 01053 (déjà validée à 100 %)
+  attend que `parcelles:synthese` soit relancée après le run national : `parc.parcelle`
+  date encore du run Moselle. Un garde-fou refuse désormais de produire un rattachement
+  contre une synthèse qui ne couvre pas les départements concernés — sans quoi il
+  rendrait 100 % d'« inconnue » avec toutes les apparences d'un résultat.
+- L'héritage de mutation par filiation (une parcelle née d'une division n'a jamais été
+  vendue, mais son sol l'a été) est écrit et attend `parc.filiation` à l'échelle
+  nationale.
+- Les 2 318 triplets ambigus de `dvf.vente` (0,7 %) — deux actes du même jour sur la
+  même parcelle, tous deux en disposition 000001 — ne sont séparables que par le prix,
+  lui-même corrigible. On les compte, on ne les tranche pas.
+- Le retard de déclaration de l'année la plus récente est structurellement sous-estimé :
+  on ne voit que les ventes déjà arrivées. 2024 affiche 180 jours contre 280 à 400 pour
+  les années mûres — c'est un artefact de troncature, pas une amélioration.
