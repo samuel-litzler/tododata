@@ -137,11 +137,17 @@ export interface FichierSource {
   millesime: string
   couche: Couche
   strategie: StrategieSource
+  /** Le département visé, ou null pour un agrégat national. */
+  departement: string | null
+  /** Format réel du fichier, qui décide de la façon de l'ouvrir avec GDAL. */
+  format: 'geojson' | 'shp'
   url: string
   key: string
   size: number
   etag: string
   lastModified: string
+  /** Nom du fichier dans le cache local. */
+  nomLocal: string
 }
 
 /**
@@ -165,14 +171,67 @@ export async function fichierNational(
   const [objet] = await listerObjets(key)
   if (!objet || objet.key !== key) return null
 
+  const format = strategie === 'geojson-france' ? 'geojson' : 'shp'
   return {
     millesime,
     couche,
     strategie,
+    departement: null,
+    format,
     key,
     url: `${BUCKET}/${key}`,
     size: objet.size,
     etag: objet.etag,
     lastModified: objet.lastModified,
+    nomLocal:
+      format === 'geojson'
+        ? `cadastre-france-${couche}-${millesime}.json.gz`
+        : `cadastre-france-${couche}-${millesime}-shp.zip`,
+  }
+}
+
+/**
+ * Le fichier d'une couche pour UN département.
+ *
+ * C'est la seule voie d'accès aux parcelles : contrairement aux communes et aux
+ * sections, elles ne sont jamais agrégées au niveau national — le fichier ferait
+ * plusieurs dizaines de Go. Le découpage départemental n'est donc pas un choix
+ * de notre part, c'est la granularité de publication.
+ *
+ * Retourne null pour les 3 millésimes de 2017, antérieurs aux agrégats
+ * départementaux (seul geojson/communes/{dep}/{insee}/ existe alors).
+ */
+export async function fichierDepartemental(
+  millesime: string,
+  departement: string,
+  couche: Couche,
+): Promise<FichierSource | null> {
+  const strategie = strategiePour(millesime)
+  if (strategie === 'geojson-par-commune') return null
+
+  const format = strategie === 'geojson-france' ? 'geojson' : 'shp'
+  const key =
+    format === 'geojson'
+      ? `${ROOT}/${millesime}/geojson/departements/${departement}/cadastre-${departement}-${couche}.json.gz`
+      : `${ROOT}/${millesime}/shp/departements/${departement}/cadastre-${departement}-${couche}-shp.zip`
+
+  const [objet] = await listerObjets(key)
+  if (!objet || objet.key !== key) return null
+
+  return {
+    millesime,
+    couche,
+    strategie,
+    departement,
+    format,
+    key,
+    url: `${BUCKET}/${key}`,
+    size: objet.size,
+    etag: objet.etag,
+    lastModified: objet.lastModified,
+    nomLocal:
+      format === 'geojson'
+        ? `cadastre-${departement}-${couche}-${millesime}.json.gz`
+        : `cadastre-${departement}-${couche}-${millesime}-shp.zip`,
   }
 }

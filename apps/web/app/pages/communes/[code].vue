@@ -29,6 +29,16 @@ const disparue =
 const nom = computed(
   () => data.value?.identite?.nom_cog ?? data.value?.identite?.nom_cadastre ?? code.value,
 )
+
+// Le parcellaire est ingéré département par département : on ne propose le lien
+// que là où il mène à quelque chose.
+const { data: depsParcelles } = await useFetch<{ departement: string }[]>(
+  '/api/parcelles/departements',
+  { default: () => [] },
+)
+const parcellaireDisponible = computed(() =>
+  depsParcelles.value.some((d) => code.value.startsWith(d.departement)),
+)
 useHead({ title: () => `${nom.value} (${code.value})` })
 
 const absorbees = computed(
@@ -109,6 +119,20 @@ const MODS: Record<string, string> = {
             arrondissement de {{ data.identite.arm_parent }}
           </UBadge>
         </div>
+
+        <!-- Le parcellaire vit sur sa propre page : plusieurs milliers de
+             géométries n'ont pas à être chargées pour consulter une fiche. -->
+        <UButton
+          v-if="parcellaireDisponible"
+          :to="`/parcelles/${code}`"
+          icon="i-lucide-layers"
+          color="neutral"
+          variant="subtle"
+          size="sm"
+          class="mt-5"
+        >
+          Voir l’évolution du parcellaire
+        </UButton>
       </div>
 
       <!-- les deux horloges -->

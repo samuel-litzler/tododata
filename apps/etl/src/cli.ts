@@ -5,12 +5,21 @@
  *   pnpm etl catalogue <millesime> [couche]  résout le fichier source et sa taille
  *   pnpm etl migrer                          applique les scripts SQL du pipeline communes
  *   pnpm etl referentiel                     charge les départements et régions de l'INSEE
+ *   pnpm etl parcelles:migrer                pose le modèle parcelles (à faire avant)
+ *   pnpm etl parcelles <dep>                 ingère les parcelles d'un département
+ *   pnpm etl parcelles:france [n] [deps...]  ingère tous les départements, n en parallèle
+ *   pnpm etl parcelles:synthese [dep]        reconstruit fiches et événements (à faire après)
+ *   pnpm etl parcelles:rapport [dep]         restitue les contrôles du pipeline parcelles
  *
  * Chaque commande est idempotente : la relancer ne doit rien casser.
  */
 import { listerMillesimes, fichierNational, strategiePour, type Couche } from './_shared/acquisition/cadastreCatalog.js'
 import { appliquerMigrations } from './pipelines/communes/steps/01-migrer.js'
 import { chargerReferentiel } from './pipelines/communes/steps/02-referentiel.js'
+import { migrerParcelles, synthetiserParcelles } from './pipelines/parcelles/steps/09-migrer.js'
+import { ingererParcelles } from './pipelines/parcelles/steps/10-ingerer.js'
+import { ingererFrance } from './pipelines/parcelles/steps/11-france.js'
+import { rapportParcelles } from './pipelines/parcelles/steps/20-rapport.js'
 import { logger } from './_shared/observability/logger.js'
 import { fermer } from './_shared/db/pgClient.js'
 
@@ -51,9 +60,39 @@ async function main() {
       await chargerReferentiel()
       break
 
+    case 'parcelles:migrer':
+      await migrerParcelles()
+      break
+
+    case 'parcelles': {
+      const dep = args[0]
+      if (!dep) throw new Error('usage : parcelles <departement>, ex : parcelles 57')
+      await ingererParcelles(dep)
+      break
+    }
+
+    case 'parcelles:france': {
+      const concurrence = Number(args[0]) || 3
+      const deps = args.slice(1).filter((a) => /^[0-9AB]{2,3}$/i.test(a)).map((d) => d.toUpperCase())
+      await ingererFrance(concurrence, deps.length ? deps : undefined)
+      break
+    }
+
+    case 'parcelles:synthese':
+      await synthetiserParcelles(args[0]?.toUpperCase())
+      break
+
+    case 'parcelles:rapport':
+      await rapportParcelles(args[0])
+      break
+
     default:
       logger.error(`commande inconnue : ${commande ?? '(aucune)'}`)
-      logger.info('commandes : millesimes | catalogue <millesime> [couche] | migrer | referentiel')
+      logger.info(
+        'commandes : millesimes | catalogue <millesime> [couche] | migrer | referentiel | ' +
+          'parcelles:migrer | parcelles <dep> | parcelles:france [n] | parcelles:synthese | ' +
+          'parcelles:rapport [dep]',
+      )
       process.exitCode = 1
   }
 }

@@ -34,8 +34,13 @@ services:
     container_name: nexus-database-dev
     restart: unless-stopped
     mem_limit: ${DB_MEM_LIMIT:-4g}
-    shm_size: 1gb # PostGIS + parallel workers : le /dev/shm par défaut (64 Mo) fait
-      # échouer les gros tris parallèles avec "could not resize shared memory".
+    # Plafonds explicites pour le run national : la machine est partagée avec
+    # d'autres stacks, et un ETL qui prend tout n'est pas un ETL qui va plus vite.
+    cpus: ${DB_CPUS:-12}
+    shm_size: ${DB_SHM_SIZE:-4gb} # PostGIS + workers parallèles : le /dev/shm par
+      # défaut (64 Mo) fait échouer les gros tris avec "could not resize shared
+      # memory". 1 Go suffisait pour un département à la fois ; le run national en
+      # traite trois de front, qui se partagent le MÊME /dev/shm.
     command:
       - postgres
       - -c

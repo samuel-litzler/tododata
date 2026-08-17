@@ -348,3 +348,144 @@ GEOFLA dérive de la BD CARTO : 10 Mo de polygones pour la France, contre 544 Mo
 le seul cadastre communal d'un relevé récent. Comparer des surfaces entre les deux
 mesurerait la méthode, pas le territoire. GEOFLA sert à **situer** une commune
 disparue, pas à mesurer son évolution.
+
+---
+
+## 9. Les parcelles : premier département (Moselle)
+
+Le passage aux parcelles n'est pas un changement d'échelle, c'est un changement de
+nature. Trois pièges ont dû être levés avant que quoi que ce soit tienne debout, et
+chacun aurait produit un résultat *plausible mais faux*.
+
+### 9.1 Un ordre de grandeur qui interdit la méthode des communes
+
+Le pipeline communes stocke une table par millésime : 558 Mo × 32 = 18 Go, sans
+conséquence. Pour la seule Moselle, les parcelles pèsent **1,54 million d'entités par
+relevé**, soit ~50 M d'observations sur 32 relevés — et 95 départements derrière.
+
+Le modèle retenu ne stocke donc pas des états mais des **changements** : une ligne
+par état stable d'une parcelle sur une plage de relevés (SCD2 appliqué à de la
+géométrie). Une parcelle jamais modifiée depuis 2018 pèse une ligne et une géométrie,
+pas trente-deux. `vu_fin IS NULL` marque l'ouverture, ce qui fait que « inchangé » ne
+coûte **aucune écriture** — sans quoi il faudrait repousser une date de fin sur 1,5 M
+de lignes à chaque relevé.
+
+### 9.2 Le shapefile départemental est en Lambert-93
+
+L'agrégat **national** des communes est en WGS84 ; le fichier **départemental** des
+parcelles est en EPSG:2154. Le `-a_srs EPSG:4326` du script communes *assigne* la
+projection sans convertir : appliqué ici, il aurait rebaptisé des mètres en degrés.
+Il faut `-t_srs`, qui reprojette.
+
+Contrôle : après reprojection, l'emprise obtenue est identique à celle du GeoJSON
+publié à 6 décimales près. La conversion retombe exactement sur les valeurs d'Etalab.
+
+### 9.3 La source republie ses coordonnées avec un bruit centimétrique
+
+C'est la découverte structurante. Première version du comparateur : deux parcelles
+identiques si leurs géométries ont la même empreinte de contenu. Résultat entre
+2018-04-03 et 2018-06-29, **deux shapefiles, même projection** :
+
+> 1 510 842 parcelles « modifiées » sur 1 539 828.
+
+En lisant les WKT bruts, avant tout traitement, on voit pourquoi : certains sommets
+sont identiques au bit près, leurs voisins glissent de 7 à 11 mm. Distribution des
+écarts sur 300 000 parcelles :
+
+| écart géométrique | part |
+|---|---|
+| identique | 0,77 % |
+| < 5 cm | 99,17 % |
+| 5 – 25 cm | 0,02 % |
+| 25 cm – 1 m | 0,04 % |
+| > 1 m | 0,01 % |
+
+Aucune astuce de hachage ne survit à ça : arrondir sur une grille ne fait que
+déplacer le problème, puisqu'il suffit qu'**un** sommet sur vingt bascule de case
+pour changer l'empreinte. Il faudrait une grille de 20 m — plus grande que beaucoup
+de parcelles.
+
+La comparaison est donc **géométrique et tolérante** : même dessin tant qu'aucun point
+du contour ne s'écarte de plus de 25 cm, seuil choisi dans le creux de la distribution
+ci-dessus. Le taux de mouvement est passé de 98 % à **0,2 – 0,35 % par relevé**.
+
+### 9.4 Une modification exige deux valeurs connues et différentes
+
+Deux artefacts distincts, même racine : confondre « la valeur a changé » avec « notre
+information sur elle a changé ».
+
+`created` et `updated` faisaient basculer 82 390 parcelles par relevé, à géométrie et
+contenance rigoureusement identiques : la source retouchait ses propres métadonnées.
+Ces champs décrivent la FICHE administrative, pas le terrain.
+
+Puis, plus grave, le champ `arpente` — qui n'existe **que** dans le GeoJSON. La
+première règle ne déclenchait pas sur un NULL entrant (« le format ne le porte
+plus ») mais déclenchait sur le cas inverse. Au relevé du 2022-07-01, quand le champ
+apparaît : **1 553 298 parcelles « modifiées » sur 1 557 169** — le département
+entier, le même jour, pour un attribut qui venait d'être renseigné pour la première
+fois. La règle est maintenant symétrique, et les valeurs nouvellement apprises sont
+reportées **en place** sur la version ouverte plutôt que d'en ouvrir une nouvelle.
+
+Ce diagnostic a livré au passage le chiffre qui valide le seuil de 25 cm : à la
+bascule de format, seules **21 686 parcelles sur 1 553 298 (1,4 %)** dépassent la
+tolérance géométrique. La conversion shapefile → GeoJSON est donc bien absorbée, là
+où le hachage échouait à 98 %. Après correction, le relevé de juillet 2022 affiche
+0,28 % de mouvement, dans la norme des autres.
+
+### 9.5 Deux défauts latents révélés au passage
+
+- **`ogr2ogr -append` ne renseigne pas le FID** dans une table préexistante. Le
+  dédoublonnage qui s'appuyait sur `ogc_fid` ne supprimait donc jamais rien,
+  silencieusement. Il ordonne maintenant sur `ctid`, et un garde-fou refuse de
+  distiller au-delà de 1 % de doublons — c'est ce qui a permis de repérer qu'un
+  `ogr2ogr` orphelin écrivait encore dans la table de travail pendant un
+  redémarrage.
+- **La mémoire partagée du conteneur** cédait sur la jointure de 1,5 M de géométries
+  (« could not resize shared memory segment »). Le magasin de géométries séparé, qui
+  imposait un hachage de 900 Mo sur une clé sans rapport avec l'identifiant de
+  parcelle, ne déduplicait en réalité **rien** — le modèle de versions fait déjà le
+  travail. Géométrie fusionnée dans la version, jointure par clé primaire.
+
+### 9.6 Ce que la donnée confirme
+
+Résultats du run complet sur les 32 relevés (1 565 026 parcelles au dernier) :
+
+- **Mouvement trimestriel entre 0,12 % et 0,34 %**, bascule de format comprise. Un
+  seul relevé sort du lot, le 2025-12-01 à 0,72 % — à examiner, probablement un
+  remaniement réel.
+- **Concordance surface / contenance : 1,72 % d'écart moyen, 0,68 % en médiane** sur
+  1,36 M de parcelles. Deux mesures indépendantes — l'une tirée du dessin, l'autre de
+  la déclaration administrative — qui se valident mutuellement. Un défaut de
+  projection ferait exploser cet écart, pas le dériver doucement.
+- **Les 18 préfixes non-000 du département sont attestés à 100 %** dans le COG
+  historique. Le lien préfixe → commune absorbée, validé à 93,6 % contre GEOFLA au
+  niveau communal, se retrouve donc au niveau parcellaire — troisième confrontation,
+  indépendante des deux premières. Certaines de ces communes sont éteintes depuis
+  1973 (Saint-Bernard `57608`), soit quarante-cinq ans avant notre premier relevé.
+
+  *Piège de contrôle à retenir* : le premier jet cherchait ces codes dans
+  `cad.observation`, qui ne contient que les communes vues par le cadastre depuis
+  2018. Une commune absorbée avant cette date en est forcément absente — le contrôle
+  donnait 2 sur 18 et ne mesurait que l'inadéquation de sa propre référence.
+- **Filiation** : 68 380 divisions, 23 310 redécoupages, 18 963 réunions, et
+  **4 426 renumérotations toutes constatées** (empreinte de contenu identique sous un
+  identifiant différent, au sein d'un même relevé). Ces dernières ne sont pas des
+  déductions : c'est la signature parcellaire d'une fusion de communes.
+- **92,67 % des parcelles ont une date de création antérieure à notre premier
+  relevé.** Notre fenêtre d'observation ne crée rien, elle découvre un parcellaire
+  déjà en place — et ces dates remontent à 2008 et au-delà, offrant une prise sur
+  l'avant-2018 que la géométrie seule ne donne pas.
+- **768 parcelles disparues puis revenues**, à confronter au phénomène des trous de
+  millésime des communes (94 cas sur 95 étaient des défauts de source).
+
+### 9.7 Ce qui reste ouvert
+
+- Les 3 relevés de 2017 ne sont publiés qu'en par-commune (~500 fichiers pour ce seul
+  département) : hors périmètre tant que le reste n'est pas validé.
+- Les 768 réapparitions ne sont pas qualifiées : défaut de source ou vrai retour ?
+- Le relevé du 2025-12-01 sort de la norme (0,72 % contre 0,2 % ailleurs).
+- Un seul département ingéré. `parc.version` pèse ~900 Mo pour la Moselle, soit
+  ~85 Go extrapolés aux 95 départements — tenable sur le budget disque, mais le
+  passage à l'échelle demandera de vérifier le comportement des jointures au-delà de
+  quelques dizaines de millions de lignes.
+

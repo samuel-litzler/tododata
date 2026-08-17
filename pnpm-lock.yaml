@@ -85,6 +85,9 @@ importers:
       '@nexus/typescript-config':
         specifier: workspace:*
         version: link:../../packages/typescript-config
+      '@types/geojson':
+        specifier: ^7946.0.16
+        version: 7946.0.16
       '@types/node':
         specifier: 22.18.10
         version: 22.18.10
