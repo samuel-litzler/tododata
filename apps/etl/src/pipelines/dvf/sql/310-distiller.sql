@@ -34,6 +34,7 @@ DECLARE
   v_lignes bigint;
   v_ouv    bigint;
   v_ferm   bigint;
+  v_illisibles bigint;
 BEGIN
   -- Une livraison peut peser plusieurs millions de lignes ; on cadre la mémoire
   -- pour ne pas concurrencer les autres travaux de la machine.
@@ -48,7 +49,7 @@ BEGIN
   -- --------------------------------------------------------------------------
   CREATE TEMP TABLE _norme ON COMMIT DROP AS
   SELECT s.ordre,
-         to_date(s.date_mutation, 'DD/MM/YYYY')                       AS date_mutation,
+         dvf.date_fr(s.date_mutation)                                 AS date_mutation,
          btrim(s.nature_mutation)                                     AS nature,
          dvf.nombre(s.valeur_fonciere)                                AS valeur,
          nullif(btrim(s.no_disposition), '')                          AS disposition,
@@ -66,12 +67,31 @@ BEGIN
          nullif(btrim(s.nature_culture_speciale), '')                 AS culture_speciale,
          dvf.nombre(s.surface_terrain)                                AS surface_terrain
     FROM dvf_stage s
-   WHERE s.date_mutation IS NOT NULL
-     AND s.code_departement IS NOT NULL
+   WHERE s.code_departement IS NOT NULL
      AND s.section IS NOT NULL AND s.no_plan IS NOT NULL;
+
+  -- Lignes dont la date est illisible : en-tête resté dans le flux, ligne
+  -- tronquée. On les écarte, mais on les COMPTE — une livraison entière qui
+  -- basculerait de format ne doit pas passer pour un chargement réussi de zéro
+  -- ligne. Le seuil est haut par rapport au bruit attendu (un en-tête par
+  -- fichier, soit six lignes sur dix-sept millions) et bas par rapport à une
+  -- rupture de format, qui les emporterait toutes.
+  SELECT count(*) INTO v_illisibles FROM _norme WHERE date_mutation IS NULL;
+  DELETE FROM _norme WHERE date_mutation IS NULL;
+
+  IF v_illisibles > 0 THEN
+    RAISE NOTICE 'livraison % : % ligne(s) à date illisible écartée(s)',
+                 p_publication, v_illisibles;
+  END IF;
 
   SELECT min(date_mutation), max(date_mutation), count(*)
     INTO v_debut, v_fin, v_lignes FROM _norme;
+
+  IF v_illisibles > greatest(100, (v_lignes + v_illisibles) / 1000) THEN
+    RAISE EXCEPTION 'livraison % : % lignes sur % ont une date illisible — '
+                    'rupture de format probable, on n''ingère pas à l''aveugle',
+                    p_publication, v_illisibles, v_lignes + v_illisibles;
+  END IF;
 
   IF v_lignes = 0 THEN
     RAISE EXCEPTION 'livraison % : aucune ligne exploitable dans %.dvf_stage',

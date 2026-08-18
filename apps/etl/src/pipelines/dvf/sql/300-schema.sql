@@ -179,11 +179,45 @@ $$;
 -- rarement, des valeurs aberrantes qu'il vaut mieux perdre que voir interrompre
 -- le chargement d'une livraison entière.
 -- --------------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION dvf.nombre(p text)
-RETURNS numeric LANGUAGE plpgsql IMMUTABLE PARALLEL SAFE AS $$
-BEGIN
-  RETURN replace(nullif(btrim(p), ''), ',', '.')::numeric;
-EXCEPTION WHEN others THEN
-  RETURN NULL;
-END;
+-- --------------------------------------------------------------------------
+-- Conversions tolérantes, SANS bloc EXCEPTION.
+--
+-- La première version encadrait `to_date` et le cast numérique par
+-- `EXCEPTION WHEN others THEN RETURN NULL`. C'est le réflexe naturel, et c'est
+-- un piège à cette échelle : en PL/pgSQL, **tout bloc EXCEPTION ouvre une
+-- sous-transaction à chaque appel**. Sur les 18 928 987 lignes d'une livraison
+-- nationale, Postgres a fini par céder — « AbortSubTransaction while in COMMIT
+-- state » — et le `WHEN others` a avalé l'erreur d'infrastructure en la
+-- déguisant en valeur illisible.
+--
+-- La signature du défaut est qu'il n'était pas déterministe : la même livraison
+-- a rendu 395 974 puis 353 703 « dates illisibles », alors que le fichier n'en
+-- contient aucune. Un `WHEN others` ne distingue pas une donnée fautive d'une
+-- machine à bout de souffle, et transforme la seconde en la première.
+--
+-- On valide donc AVANT de convertir, en SQL pur : pas de sous-transaction, et
+-- au passage bien plus rapide. `pg_input_is_valid` (PostgreSQL 16+) est fait
+-- exactement pour ça.
+-- --------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION dvf.date_fr(p text)
+RETURNS date LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  -- On recompose en ISO plutôt que d'appeler to_date : `to_date` est indulgent
+  -- et ferait glisser un 31 février au 3 mars, ce qui inventerait une date que
+  -- la source ne porte pas. Le cast ISO, lui, refuse — et on rend NULL.
+  SELECT CASE
+    WHEN btrim(p) ~ '^[0-9]{2}/[0-9]{2}/[0-9]{4}$'
+     AND pg_input_is_valid(substr(btrim(p), 7, 4) || '-' || substr(btrim(p), 4, 2)
+                            || '-' || substr(btrim(p), 1, 2), 'date')
+    THEN (substr(btrim(p), 7, 4) || '-' || substr(btrim(p), 4, 2)
+           || '-' || substr(btrim(p), 1, 2))::date
+  END;
 $$;
+
+CREATE OR REPLACE FUNCTION dvf.nombre(p text)
+RETURNS numeric LANGUAGE sql IMMUTABLE PARALLEL SAFE AS $$
+  SELECT CASE
+    WHEN pg_input_is_valid(replace(nullif(btrim(p), ''), ',', '.'), 'numeric')
+    THEN replace(btrim(p), ',', '.')::numeric
+  END;
+$$;
+

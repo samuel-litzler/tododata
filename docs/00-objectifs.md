@@ -603,6 +603,52 @@ Aucun des deux ne signalait quoi que ce soit. On vérifie désormais qu'une livr
 effectivement chargé des lignes avant de la distiller — un shell peut sortir en 0 sans
 avoir rien produit.
 
+### 10.4 bis Le bloc EXCEPTION qui effaçait 3 % des prix
+
+Le pire défaut du projet, et il ne levait aucune erreur.
+
+`dvf.date_fr` et `dvf.nombre` encadraient leur conversion d'un
+`EXCEPTION WHEN others THEN RETURN NULL` — le réflexe naturel pour tolérer une
+donnée sale. Or **en PL/pgSQL tout bloc EXCEPTION ouvre une sous-transaction à
+chaque appel**. Sur les 18 928 987 lignes d'une livraison nationale traitées en
+une requête, Postgres finit par céder :
+
+    WARNING:  AbortSubTransaction while in COMMIT state
+
+Le `WHEN others` attrapait alors l'erreur d'infrastructure et la déguisait en
+donnée illisible. La signature du défaut est qu'il n'était pas déterministe : la
+même livraison a rendu 395 974 puis 353 703 « dates illisibles », sur un fichier
+qui n'en contient aucune — vérifié caractère par caractère, 1 814 dates
+distinctes, toutes valides.
+
+Le coût réel s'est mesuré sur la première livraison, déjà en base :
+
+    201904, source      13 903 117 lignes · 141 693 valeurs vides   1,019 %
+    201904, en base                         420 412 valeurs nulles  3,024 %
+
+**278 719 prix effacés en silence.** Aucune erreur, aucune alerte, un jeu de
+données d'apparence complète. Sans le changement de format d'avril 2023 qui a
+fait tomber `to_date` bruyamment, le défaut serait resté invisible jusqu'à ce
+que quelqu'un s'étonne du nombre de mutations sans prix.
+
+Correctif : les deux fonctions sont réécrites en **SQL pur**, on valide avant de
+convertir avec `pg_input_is_valid` (PostgreSQL 16+). Aucune sous-transaction, et
+nettement plus rapide. La date est recomposée en ISO plutôt que passée à
+`to_date`, qui est indulgent et ferait glisser un 31 février au 3 mars —
+inventant une date que la source ne porte pas.
+
+Vérifié après correction sur la livraison entière : 0 date nulle, et 1,008 % de
+valeurs nulles, soit exactement le taux de champs vides de la source.
+
+Deux règles à retenir au-delà de DVF :
+
+- **`WHEN others` ne distingue pas une donnée fautive d'une machine à bout de
+  souffle**, et transforme la seconde en la première. N'attraper que ce qu'on
+  sait nommer, ou ne pas attraper.
+- **Un garde-fou qui compte ce qu'il écarte vaut mieux qu'un garde-fou qui se
+  tait.** C'est le comptage des lignes rejetées, ajouté pour tout autre chose,
+  qui a rendu ce défaut visible.
+
 ### 10.5 Ce que l'historisation révèle — département 01, onze livraisons
 
 2 106 965 lignes livrées au total, **516 900 versions stockées** : le SCD2 divise le

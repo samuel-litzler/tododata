@@ -98,8 +98,23 @@ export async function ingererLivraison(pub: string, options: Options = {}): Prom
     // une erreur de syntaxe, et awk sort alors sans rien écrire.
     const filtre = options.departement ? `$19 == "${options.departement}" ` : ''
     // Chaque fichier porte son propre en-tête : concaténés, ils réapparaissent
-    // en plein milieu du flux. On les reconnaît à leur première colonne.
-    const awk = `awk -F'|' '$1 == "Code service CH" { next } ${filtre}{ printf "%d|%s\\n", ++n, $0 }'`
+    // en plein milieu du flux.
+    //
+    // On les reconnaît à la FORME de leur colonne date, pas à un libellé. La
+    // première version testait `$1 == "Code service CH"` — et ce libellé est
+    // devenu « Identifiant de document » à la livraison d'avril 2023. L'en-tête
+    // passait alors pour une donnée, et la distillation de 17 200 937 lignes
+    // tombait sur `invalid value "Da" for "DD"`. Le filtre départemental des
+    // essais masquait le défaut : un en-tête ne porte pas non plus de code
+    // département.
+    //
+    // Ce qui est écarté est COMPTÉ et remonté : un fichier dont toutes les lignes
+    // seraient rejetées ne doit pas passer pour un chargement réussi.
+    const estUneDate = '$9 ~ /^[0-9][0-9]\\/[0-9][0-9]\\/[0-9][0-9][0-9][0-9]$/'
+    const awk =
+      `awk -F'|' '${estUneDate} { ${filtre ? `if (${filtre.trim()}) ` : ''}` +
+      `{ printf "%d|%s\\n", ++n, $0 }; next } { ecartees++ } ` +
+      `END { if (ecartees > 0) print "lignes écartées (en-tête ou date illisible) : " ecartees > "/dev/stderr" }'`
 
     logger.info(`${pub} : ${fichiers.length} fichier(s)${options.departement ? ` · dép. ${options.departement}` : ''}`)
 
@@ -142,6 +157,10 @@ export async function ingererLivraison(pub: string, options: Options = {}): Prom
     const { rows } = await client.query<{
       n_lignes: string; n_ouvertures: string; n_fermetures: string
     }>('SELECT * FROM dvf.distiller($1::date, $2)', [publication, schema])
+
+    // Ce qu'awk a écarté : un en-tête par fichier en régime normal. Toute autre
+    // valeur mérite un regard — c'est le signe d'un format qui bouge.
+    if (erreurs.trim()) logger.info(`${pub} : ${erreurs.trim()}`)
 
     const r = rows[0]!
     await client.query(
