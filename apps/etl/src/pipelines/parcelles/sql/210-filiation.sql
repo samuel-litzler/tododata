@@ -28,6 +28,14 @@
 -- imbriquée de plusieurs centaines de millions de comparaisons.
 -- =============================================================================
 
+-- Cadrage mémoire, pour la même raison qu'en 200 : les index GIST nationaux et
+-- le croisement spatial allouent en mémoire partagée dès qu'ils se parallélisent,
+-- et /dev/shm ne fait qu'un gigaoctet dans le conteneur.
+SET LOCAL work_mem = '128MB';
+SET LOCAL max_parallel_workers_per_gather = 1;
+SET LOCAL enable_parallel_hash = off;
+SET LOCAL maintenance_work_mem = '512MB';
+
 -- Le recouvrement se calcule en projection métrique (parc.srid_metrique) : en
 -- degrés, ST_Area donne des surfaces sans signification et le rapport serait
 -- faux dès qu'on change de latitude.

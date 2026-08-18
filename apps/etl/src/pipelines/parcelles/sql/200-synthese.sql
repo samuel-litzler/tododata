@@ -11,6 +11,22 @@
 -- main, jamais une source de vérité.
 -- =============================================================================
 
+-- Cadrage mémoire, à l'échelle nationale indispensable.
+--
+-- À 101 M de versions, les regroupements et les constructions d'index de ce
+-- script lancent des workers parallèles qui allouent leurs tables de hachage en
+-- MÉMOIRE PARTAGÉE. C'est ce qui a saturé /dev/shm (1 Go dans le conteneur) et
+-- fait échouer le département 12 pendant l'ingestion. Le distillateur avait été
+-- corrigé, pas la synthèse — qui n'avait jamais tourné qu'à l'échelle d'un
+-- département.
+--
+-- SET LOCAL et non SET : ces scripts sont envoyés d'un bloc, donc dans une
+-- transaction implicite, et le réglage ne fuit pas vers les autres emprunteurs
+-- du pool.
+SET LOCAL work_mem = '128MB';
+SET LOCAL max_parallel_workers_per_gather = 1;
+SET LOCAL enable_parallel_hash = off;
+
 -- --------------------------------------------------------------------------
 -- Les relevés d'un département, numérotés. Sert à répondre à « quel relevé vient
 -- après celui-ci ? », question omniprésente ici : une disparition n'est pas
